@@ -9,13 +9,10 @@ namespace SourceEx.Domain.Models;
 
 public class Expense : Aggregate<ExpenseId>
 {
-    public string EmployeeId { get; private set; } = string.Empty;
-    public string DepartmentId { get; private set; } = string.Empty;
-    public Money Amount { get; private set; } = default!;
-    public string Description { get; private set; } = string.Empty;
     public ExpenseStatus Status { get; private set; }
 
-    protected Expense() { } 
+    // EF Core'un veritabanından veri okurken nesne üretebilmesi için gereklidir.
+    protected Expense() { }
 
     // Factory Method
     /// <summary>
@@ -31,6 +28,9 @@ public class Expense : Aggregate<ExpenseId>
     /// <returns>An instance of <see cref="Expense"/> initialized with the provided details and a status of pending.</returns>
     public static Expense Create(ExpenseId id, string employeeId, string departmentId, Money amount, string description)
     {
+        if (amount <= 0)
+            throw new ArgumentException("Harcama tutarı 0'dan büyük olmalıdır.");
+
         var expense = new Expense
         {
             Id = id,
@@ -38,6 +38,7 @@ public class Expense : Aggregate<ExpenseId>
             DepartmentId = departmentId,
             Amount = amount,
             Description = description,
+            CreatedAt = DateTime.UtcNow,
             Status = ExpenseStatus.Pending
         };
 
@@ -50,10 +51,16 @@ public class Expense : Aggregate<ExpenseId>
         if (Status != ExpenseStatus.Pending)
             throw new DomainException("Only pending expenses can be approved.");
 
+        Status = ExpenseStatus.Approved;
 
         if (DepartmentId != approverDepartmentId)
             throw new DomainException("Only the department that owns the expense can approve it.");
 
+    // İş Mantığı: Reddetme Aksiyonu
+    public void Reject()
+    {
+        if (Status != ExpenseStatus.Pending)
+            throw new InvalidOperationException("Sadece 'Beklemede' olan harcamalar reddedilebilir.");
 
         Status = ExpenseStatus.Approved;
         AddDomainEvent(new ExpenseApprovedEvent(this.Id));
