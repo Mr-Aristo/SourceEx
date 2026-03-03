@@ -7,7 +7,7 @@
 /// Domain events added to the aggregate can be used to signal changes or trigger side effects within the domain model.
 /// This class is intended to be inherited by concrete aggregate root implementations.</remarks>
 /// <typeparam name="TId">The type of the unique identifier for the aggregate root.</typeparam>
-public abstract class Aggregate<TId> : Entity<TId>
+public abstract class Aggregate<TId> : Entity<TId>, IAggregateRoot
 {
     private readonly List<IDomainEvent> _domainEvents = new();
     public IReadOnlyList<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();

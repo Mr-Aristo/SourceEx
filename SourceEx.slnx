@@ -3,5 +3,6 @@
     <Project Path="src/BuildingBlocks/BuildingBlocks.csproj" />
     <Project Path="src/SourceEx.Application/SourceEx.Application.csproj" Id="9f3869bf-b50a-40d0-9ddd-43de12dd0709" />
     <Project Path="src/SourceEx.Domain/SourceEx.Domain.csproj" Id="10c91d73-05aa-4468-b3c1-e370a12834f9" />
+    <Project Path="src/SourceEx.Infrastructure/SourceEx.Infrastructure.csproj" Id="3fe30a76-5221-4d3f-a6f8-d7e78ac765bb" />
   </Folder>
 </Solution>

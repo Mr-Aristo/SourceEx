@@ -2,18 +2,15 @@
 
 namespace SourceEx.Application.Data;
 
+/// <summary>
+/// Defines the contract for an application database context that provides access to expense entities and supports
+/// saving changes asynchronously.
+/// </summary>
+/// <remarks>Implementations of this interface are typically used to interact with the application's data store,
+/// enabling querying and persisting of expense data. This interface is intended to be used with dependency injection to
+/// facilitate testing and separation of concerns.</remarks>
 public interface IApplicationDbContext
 {
-    /// <summary>
-    /// Gets the collection of expenses in the database context.
-    /// </summary>
     DbSet<Expense> Expenses { get; }
-
-    /// <summary>
-    /// Asynchronously saves all changes made in this context to the underlying database.
-    /// </summary>
-    /// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous save operation.</param>
-    /// <returns>A task that represents the asynchronous save operation. The task result contains the number of state entries
-    /// written to the database.</returns>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
