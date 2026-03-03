@@ -24,8 +24,7 @@ public class CreateExpenseCommandHandler : ICommandHandler<CreateExpenseCommand,
 
         var expense = Expense.Create(expenseId, request.EmployeeId, request.DepartmentId, money, request.Description);
 
-        //todo; .Add object error 
-        //_context.Expenses.Add(expense);
+        _context.Expenses.Add(expense);
         await _context.SaveChangesAsync(cancellationToken);
 
         return expense.Id.Value;
