@@ -1,4 +1,5 @@
 ﻿using SourceEx.Domain.Models;
+using SourceEx.Domain.ValueObjects;
 
 namespace SourceEx.Application.Data;
 
@@ -11,6 +12,7 @@ namespace SourceEx.Application.Data;
 /// facilitate testing and separation of concerns.</remarks>
 public interface IApplicationDbContext
 {
-    DbSet<Expense> Expenses { get; }
+    Task AddExpenseAsync(Expense expense, CancellationToken cancellationToken = default);
+    Task<Expense?> GetExpenseByIdAsync(ExpenseId expenseId, CancellationToken cancellationToken = default);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -16,15 +16,19 @@ public class Expense : Aggregate<ExpenseId>
 
     protected Expense() { }
 
-    // Factory Method
     /// <summary>
     /// Creates a new expense record with the specified details and sets its initial status to pending.
     /// </summary>
-    /// <remarks>This method also raises a domain event to signal that a new expense has been created. The
-    /// returned expense will have its status set to pending by default.</remarks>
-    /// <returns>An instance of <see cref="Expense"/> initialized with the provided details and a status of pending.</returns>
     public static Expense Create(ExpenseId id, string employeeId, string departmentId, Money amount, string description)
     {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            throw new DomainException("EmployeeId is required.");
+
+        if (string.IsNullOrWhiteSpace(departmentId))
+            throw new DomainException("DepartmentId is required.");
+
+        if (string.IsNullOrWhiteSpace(description))
+            throw new DomainException("Description is required.");
 
         var expense = new Expense
         {
@@ -37,27 +41,47 @@ public class Expense : Aggregate<ExpenseId>
             Status = ExpenseStatus.Pending
         };
 
-        expense.AddDomainEvent(new ExpenseCreatedEvent(expense.Id));
+        expense.AddDomainEvent(new ExpenseCreatedDomainEvent(
+            expense.Id.Value,
+            expense.EmployeeId,
+            expense.DepartmentId,
+            expense.Amount.Amount,
+            expense.Amount.Currency,
+            expense.Description));
+
         return expense;
     }
 
-    public void Approve(string approverDepartmentId)
+    /// <summary>
+    /// Approves a pending expense for the owning department.
+    /// </summary>
+    public void Approve(string approverId, string approverDepartmentId)
     {
         if (Status != ExpenseStatus.Pending)
             throw new DomainException("Only pending expenses can be approved.");
 
-        Status = ExpenseStatus.Approved;
+        if (string.IsNullOrWhiteSpace(approverDepartmentId))
+            throw new DomainException("ApproverDepartmentId is required.");
 
         if (DepartmentId != approverDepartmentId)
             throw new DomainException("Only the department that owns the expense can approve it.");
+
+        if (string.IsNullOrWhiteSpace(approverId))
+            throw new DomainException("ApproverId is required.");
+
+        Status = ExpenseStatus.Approved;
+        AddDomainEvent(new ExpenseApprovedDomainEvent(Id.Value, approverId, approverDepartmentId));
     }
 
+    /// <summary>
+    /// Rejects a pending expense.
+    /// </summary>
     public void Reject()
     {
         if (Status != ExpenseStatus.Pending)
-           throw new DomainException("Only pending expenses can be rejected.");
+            throw new DomainException("Only pending expenses can be rejected.");
 
-        Status = ExpenseStatus.Approved;
-        AddDomainEvent(new ExpenseApprovedEvent(this.Id));
+        Status = ExpenseStatus.Rejected;
+        AddDomainEvent(new ExpenseRejectedDomainEvent(Id.Value));
     }
 }

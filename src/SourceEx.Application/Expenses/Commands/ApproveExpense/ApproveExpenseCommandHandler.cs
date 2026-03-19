@@ -3,11 +3,12 @@ using MediatR;
 using SourceEx.Application.Data;
 using SourceEx.Domain.ValueObjects;
 
-
 namespace SourceEx.Application.Expenses.Commands.ApproveExpense;
 
-internal class ApproveExpenseCommandHandler
-: ICommandHandler<ApproveExpenseCommand, Unit>
+/// <summary>
+/// Handles expense approval commands.
+/// </summary>
+public sealed class ApproveExpenseCommandHandler : ICommandHandler<ApproveExpenseCommand, Unit>
 {
     private readonly IApplicationDbContext _context;
 
@@ -19,15 +20,12 @@ internal class ApproveExpenseCommandHandler
     public async Task<Unit> Handle(ApproveExpenseCommand request, CancellationToken cancellationToken)
     {
         var expenseId = ExpenseId.Of(request.ExpenseId);
-
-        var expense = await _context.Expenses
-            .FirstOrDefaultAsync(e => e.Id == expenseId, cancellationToken);
+        var expense = await _context.GetExpenseByIdAsync(expenseId, cancellationToken);
 
         if (expense == null)
-            throw new Exception($"Expense with ID {expenseId.Value} not found.");
+            throw new KeyNotFoundException($"Expense with ID {expenseId.Value} was not found.");
 
-
-        expense.Approve(request.ApproverDepartmentId);
+        expense.Approve(request.ApproverId, request.ApproverDepartmentId);
 
         await _context.SaveChangesAsync(cancellationToken);
 

@@ -17,21 +17,37 @@ public class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
     {
         builder.ToTable("Expenses");
 
-        // ExpenseId (Value Object) transformasyonu - Guid olarak saklanacak
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
                .HasConversion(
-                   expenseId => expenseId.Value, // DB'ye yazarken Guid'i al
-                   value => ExpenseId.Of(value)); // DB'den okurken ExpenseId objesi yarat
+                   expenseId => expenseId.Value,
+                   value => ExpenseId.Of(value));
 
-        // Money (Value Object) dönüşümü - "OwnsOne" kullanarak aynı tabloya 2 kolon ekliyoruz
         builder.OwnsOne(x => x.Amount, moneyBuilder =>
         {
             moneyBuilder.Property(m => m.Amount).HasColumnName("Amount").IsRequired();
             moneyBuilder.Property(m => m.Currency).HasColumnName("Currency").HasMaxLength(3).IsRequired();
         });
 
-        builder.Property(x => x.Description).HasMaxLength(500);
-        builder.Property(x => x.EmployeeId).IsRequired();
+        builder.Property(x => x.EmployeeId)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        builder.Property(x => x.DepartmentId)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        builder.Property(x => x.Description)
+            .HasMaxLength(500)
+            .IsRequired();
+
+        builder.Property(x => x.Status)
+            .HasConversion<int>()
+            .IsRequired();
+
+        builder.Property(x => x.CreatedAt)
+            .IsRequired();
+
+        builder.HasIndex(x => new { x.DepartmentId, x.Status });
     }
 }
