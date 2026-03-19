@@ -1,10 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SourceEx.Application.Data;
+using SourceEx.Contracts.Expenses;
 using SourceEx.Domain.Abstractions;
+using SourceEx.Domain.Events;
 using SourceEx.Domain.Models;
+using SourceEx.Domain.ValueObjects;
 using SourceEx.Infrastructure.Outbox;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace SourceEx.Infrastructure.Data.Context;
 
@@ -16,35 +18,42 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Expense> Expenses => Set<Expense>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
+    /// <summary>
+    /// Adds a new expense aggregate to the current unit of work.
+    /// </summary>
+    public Task AddExpenseAsync(Expense expense, CancellationToken cancellationToken = default)
+    {
+        Expenses.Add(expense);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Retrieves an expense aggregate by identifier.
+    /// </summary>
+    public Task<Expense?> GetExpenseByIdAsync(ExpenseId expenseId, CancellationToken cancellationToken = default)
+    {
+        return Expenses.FirstOrDefaultAsync(expense => expense.Id == expenseId, cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Yazdığımız Configurations (ExpenseConfiguration vb.) sınıflarını otomatik bulup uygular
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
         base.OnModelCreating(modelBuilder);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-
         var aggregates = ChangeTracker
             .Entries<IAggregateRoot>()
             .Where(e => e.Entity.DomainEvents.Any())
             .Select(e => e.Entity)
             .ToList();
 
-        // 2. Eventleri OutboxMessage'a çevir
         var outboxMessages = aggregates
             .SelectMany(entity => entity.DomainEvents)
-            .Select(domainEvent => new OutboxMessage
-            {
-                Id = Guid.NewGuid(),
-                OccurredOn = DateTime.UtcNow,
-                Type = domainEvent.GetType().Name,
-                Content = JsonSerializer.Serialize(domainEvent, new JsonSerializerOptions { ReferenceHandler = ReferenceHandler.IgnoreCycles })
-            })
+            .Select(CreateOutboxMessage)
             .ToList();
 
-        // 3. Tabloya ekle ve Aggregate'lerin içini temizle
         OutboxMessages.AddRange(outboxMessages);
 
         foreach (var aggregate in aggregates)
@@ -53,5 +62,47 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         }
 
         return await base.SaveChangesAsync(cancellationToken);
+    }
+
+    private static OutboxMessage CreateOutboxMessage(IDomainEvent domainEvent)
+    {
+        var integrationEvent = domainEvent switch
+        {
+            ExpenseCreatedDomainEvent createdEvent => new ExpenseCreatedIntegrationEvent(
+                createdEvent.ExpenseId,
+                createdEvent.EmployeeId,
+                createdEvent.DepartmentId,
+                createdEvent.Amount,
+                createdEvent.Currency,
+                createdEvent.Description)
+            {
+                Id = createdEvent.EventId,
+                OccurredOnUtc = createdEvent.OccurredOnUtc
+            },
+            ExpenseApprovedDomainEvent approvedEvent => new ExpenseApprovedIntegrationEvent(
+                approvedEvent.ExpenseId,
+                approvedEvent.ApproverId,
+                approvedEvent.ApproverDepartmentId)
+            {
+                Id = approvedEvent.EventId,
+                OccurredOnUtc = approvedEvent.OccurredOnUtc
+            },
+            ExpenseRejectedDomainEvent rejectedEvent => new ExpenseRejectedIntegrationEvent(rejectedEvent.ExpenseId)
+            {
+                Id = rejectedEvent.EventId,
+                OccurredOnUtc = rejectedEvent.OccurredOnUtc
+            },
+            _ => throw new InvalidOperationException($"No integration event mapping exists for '{domainEvent.GetType().Name}'.")
+        };
+
+        var messageType = integrationEvent.GetType();
+
+        return new OutboxMessage
+        {
+            Id = integrationEvent.Id,
+            OccurredOnUtc = integrationEvent.OccurredOnUtc,
+            Type = messageType.AssemblyQualifiedName ?? messageType.FullName ?? messageType.Name,
+            Content = JsonSerializer.Serialize((object)integrationEvent, messageType)
+        };
     }
 }

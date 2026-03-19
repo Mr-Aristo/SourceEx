@@ -20,7 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\SourceEx.Application\SourceEx.Application.csproj" />
+    <ProjectReference Include="..\SourceEx.Contracts\SourceEx.Contracts.csproj" />
     <ProjectReference Include="..\SourceEx.Domain\SourceEx.Domain.csproj" />
   </ItemGroup>
 

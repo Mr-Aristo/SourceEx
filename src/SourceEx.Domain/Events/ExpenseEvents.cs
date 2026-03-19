@@ -1,16 +1,27 @@
 ﻿using SourceEx.Domain.Abstractions;
-using SourceEx.Domain.ValueObjects;
 
 namespace SourceEx.Domain.Events;
 
-public record ExpenseCreatedEvent(ExpenseId ExpenseId) : IDomainEvent
-{
-    public Guid EventId => Guid.NewGuid();
-    public DateTime OccurredOn => DateTime.UtcNow;
-}
+/// <summary>
+/// Raised when a new expense is created.
+/// </summary>
+public sealed record ExpenseCreatedDomainEvent(
+    Guid ExpenseId,
+    string EmployeeId,
+    string DepartmentId,
+    decimal Amount,
+    string Currency,
+    string Description) : DomainEvent;
 
-public record ExpenseApprovedEvent(ExpenseId ExpenseId) : IDomainEvent
-{
-    public Guid EventId => Guid.NewGuid();
-    public DateTime OccurredOn => DateTime.UtcNow;
-}
+/// <summary>
+/// Raised when an expense is approved.
+/// </summary>
+public sealed record ExpenseApprovedDomainEvent(
+    Guid ExpenseId,
+    string ApproverId,
+    string ApproverDepartmentId) : DomainEvent;
+
+/// <summary>
+/// Raised when an expense is rejected.
+/// </summary>
+public sealed record ExpenseRejectedDomainEvent(Guid ExpenseId) : DomainEvent;

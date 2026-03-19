@@ -2,15 +2,15 @@
 using SourceEx.Application.Data;
 using SourceEx.Domain.Models;
 using SourceEx.Domain.ValueObjects;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace SourceEx.Application.Expenses.Commands.CreateExpense;
 
-public class CreateExpenseCommandHandler : ICommandHandler<CreateExpenseCommand, Guid>
+/// <summary>
+/// Handles expense creation commands.
+/// </summary>
+public sealed class CreateExpenseCommandHandler : ICommandHandler<CreateExpenseCommand, Guid>
 {
-    public readonly IApplicationDbContext _context;
+    private readonly IApplicationDbContext _context;
 
     public CreateExpenseCommandHandler(IApplicationDbContext context)
     {
@@ -24,7 +24,7 @@ public class CreateExpenseCommandHandler : ICommandHandler<CreateExpenseCommand,
 
         var expense = Expense.Create(expenseId, request.EmployeeId, request.DepartmentId, money, request.Description);
 
-        _context.Expenses.Add(expense);
+        await _context.AddExpenseAsync(expense, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return expense.Id.Value;

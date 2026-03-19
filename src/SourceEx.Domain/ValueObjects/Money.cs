@@ -12,8 +12,11 @@ public record Money(decimal Amount, string Currency = "USD")
     public static Money Of(decimal amount, string currency = "USD")
     {
         if (amount <= 0)
-           throw new ArgumentException("Amount must be greater than zero.", nameof(amount));
+            throw new ArgumentException("Amount must be greater than zero.", nameof(amount));
 
-        return new Money(amount, currency);
+        if (string.IsNullOrWhiteSpace(currency))
+            throw new ArgumentException("Currency is required.", nameof(currency));
+
+        return new Money(amount, currency.ToUpperInvariant());
     }
 }

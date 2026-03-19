@@ -1,0 +1,129 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: #f5f7fb;
+  color: #172033;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(47, 109, 246, 0.08), transparent 22rem),
+    linear-gradient(180deg, #f8faff 0%, #eef3fb 100%);
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.app-nav a {
+  border: 1px solid #c8d3ea;
+  border-radius: 999px;
+  padding: 0.6rem 0.9rem;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.app-nav a.active {
+  border-color: #2f6df6;
+  background: #dce8ff;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #dbe4f2;
+  border-radius: 20px;
+  padding: 1.25rem;
+  box-shadow: 0 10px 28px rgba(20, 31, 57, 0.05);
+}
+
+.panel + .panel {
+  margin-top: 1rem;
+}
+
+.panel h1,
+.panel h2,
+.panel h3,
+.panel p {
+  margin-top: 0;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.inline-actions button,
+.inline-actions a {
+  border: 1px solid #b7c4df;
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  background: #ffffff;
+  color: inherit;
+  text-decoration: none;
+}
+
+.muted {
+  color: #55627d;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: #edf3ff;
+  color: #22427c;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+
+pre {
+  margin: 0;
+  padding: 0.9rem;
+  overflow-x: auto;
+  border-radius: 14px;
+  background: #10213f;
+  color: #ecf2ff;
+}
+
+code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+

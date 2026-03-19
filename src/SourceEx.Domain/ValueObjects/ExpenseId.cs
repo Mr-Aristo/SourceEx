@@ -11,5 +11,11 @@ public record ExpenseId(Guid Value)
     /// domain-specific semantics for identifying expenses within the application.
     /// </summary>
     /// <returns>An ExpenseId instance representing the specified GUID value.</returns>
-    public static ExpenseId Of(Guid value) => new(value);
+    public static ExpenseId Of(Guid value)
+    {
+        if (value == Guid.Empty)
+            throw new ArgumentException("ExpenseId cannot be empty.", nameof(value));
+
+        return new ExpenseId(value);
+    }
 }
