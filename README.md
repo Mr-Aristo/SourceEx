@@ -99,6 +99,7 @@ English project documentation is available in:
 
 - [Project Documentation](docs/PROJECT_DOCUMENTATION.md)
 - [Testing Guide](docs/TESTING_GUIDE.md)
+- [Linux Local Production Guide](docs/linux-local-production-tr.md)
 
 ## Client
 
