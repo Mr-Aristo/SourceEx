@@ -1,25 +1,12 @@
 namespace SourceEx.API.Contracts;
 
 /// <summary>
-/// Represents the payload required to mint a local access token.
-/// </summary>
-public sealed record GenerateTokenRequest(
-    string UserId,
-    string DepartmentId,
-    string[] Roles);
-
-/// <summary>
-/// Represents an issued bearer token response.
-/// </summary>
-public sealed record AccessTokenResponse(
-    string AccessToken,
-    DateTime ExpiresAtUtc,
-    string TokenType = "Bearer");
-
-/// <summary>
-/// Represents the currently authenticated user.
+/// Represents the currently authenticated user as seen by the expense API.
 /// </summary>
 public sealed record CurrentUserResponse(
     string UserId,
+    string UserName,
+    string DisplayName,
+    string Email,
     string DepartmentId,
     string[] Roles);

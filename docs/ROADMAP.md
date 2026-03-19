@@ -6,8 +6,8 @@ Bu roadmap, mevcut Clean Architecture iskeletini bozmeden projeyi uretime daha y
 
 - [x] API'ye JWT bearer authentication ekle
 - [x] Authorization policy'leri tanimla
-- [x] Local/development token uretebilen bir auth endpoint'i ekle
-- [x] Expense endpoint'lerini token claim'leriyle calisir hale getir
+- [x] Login, refresh token ve rol yonetimi icin ayri bir `SourceEx.Identity.API` modulu ekle
+- [x] Expense endpoint'lerini identity servisi tarafindan uretilen token claim'leriyle calisir hale getir
 
 ## Faz 2: AI Policy Workflow
 

@@ -1,26 +1,26 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.Extensions.Options;
+using BuildingBlocks.Security;
 using Microsoft.IdentityModel.Tokens;
+using SourceEx.Identity.API.Entities;
 
-namespace SourceEx.API.Security;
+namespace SourceEx.Identity.API.Security;
 
 /// <summary>
-/// Issues local JWT access tokens for development and integration testing.
+/// Issues JWT access tokens for authenticated users.
 /// </summary>
 public sealed class JwtTokenIssuer
 {
     private readonly JwtOptions _options;
 
-    public JwtTokenIssuer(IOptions<JwtOptions> options)
+    public JwtTokenIssuer(Microsoft.Extensions.Options.IOptions<JwtOptions> options)
     {
         _options = options.Value;
     }
 
     public (string AccessToken, DateTime ExpiresAtUtc) CreateAccessToken(
-        string userId,
-        string departmentId,
+        ApplicationUser user,
         IEnumerable<string> roles)
     {
         var now = DateTime.UtcNow;
@@ -28,10 +28,14 @@ public sealed class JwtTokenIssuer
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, userId),
-            new(ClaimNames.UserId, userId),
-            new(ClaimNames.DepartmentId, departmentId),
-            new(ClaimTypes.Name, userId)
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.UniqueName, user.UserName),
+            new(JwtRegisteredClaimNames.Email, user.Email),
+            new(ClaimTypes.Name, user.UserName),
+            new(ClaimTypes.Email, user.Email),
+            new(ClaimNames.UserId, user.Id.ToString()),
+            new(ClaimNames.DepartmentId, user.DepartmentId),
+            new(ClaimNames.DisplayName, user.DisplayName)
         };
 
         claims.AddRange(
@@ -57,3 +61,4 @@ public sealed class JwtTokenIssuer
         return (handler.WriteToken(token), expiresAtUtc);
     }
 }
+

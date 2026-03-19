@@ -68,6 +68,7 @@ Repo’nun önemli parçaları kabaca şöyle:
 │  ├─ SourceEx.Infrastructure/
 │  ├─ SourceEx.Contracts/
 │  ├─ SourceEx.API/
+│  ├─ SourceEx.Identity.API/
 │  ├─ SourceEx.Worker.Notification/
 │  ├─ SourceEx.Worker.Audit/
 │  ├─ SourceEx.Worker.Policy/
@@ -153,6 +154,20 @@ HTTP giriş noktası burasıdır. Minimal API kullanılmış. İçinde:
 bulunur.
 
 Bu proje mümkün olduğunca ince tutulmaya çalışılmıştır. Endpoint’ler doğrudan handler mantığı yazmaz; komut veya sorgu üretir ve MediatR’a gönderir.
+
+### `src/SourceEx.Identity.API`
+
+Bu proje ayrı kimlik modülüdür. Sistemde kullanıcı adı, parola, rol ve refresh token yönetimi artık burada durur. İçinde:
+
+- kullanıcı ve rol entity’leri
+- refresh token saklama modeli
+- login / register / refresh / logout endpoint’leri
+- JWT üretimi
+- seeded local kullanıcılar
+
+yer alır.
+
+Bu tasarım önemlidir çünkü `SourceEx.API` artık parola doğrulayan servis değil, sadece kimliği doğrulayan token’ı tüketen business servis konumundadır.
 
 ### `src/SourceEx.Worker.Notification`
 
@@ -556,19 +571,18 @@ Bu projede endpoint sayısı az ve akışlar oldukça net. Minimal API bu durumd
 
 ### Authentication / authorization nasıl bağlanmış?
 
-`SourceEx.API/Security` klasörü bu işin merkezi.
+`SourceEx.API/Security` klasörü expense servisinin JWT doğrulama tarafının merkezidir.
 
 - `JwtOptions`: konfigürasyon modeli
-- `JwtTokenIssuer`: local geliştirme token üreticisi
 - `ClaimsPrincipalExtensions`: claim okuma yardımcıları
 - `AuthorizationPolicies`: policy adları
 - `ServiceCollectionExtensions`: auth register işlemleri
 
 Burada kritik nokta şu:
 
-Bu projede gerçek bir external identity provider yok. Keycloak benzeri sistemler mimari hedefte düşünülebilir, ama mevcut kodda kullanılan yapı **local JWT issuance**.
+Bu projede artık kimlik üretimi expense API’nin içinde yapılmıyor. JWT üretimi [SourceEx.Identity.API](../src/SourceEx.Identity.API) içinde. Expense API sadece o token’ı doğruluyor ve claim’leri iş akışına taşıyor.
 
-Yani `/api/v1.0/auth/token` endpoint’i bir geliştirici kolaylığı endpoint’i. Production IAM çözümü gibi düşünülmemeli.
+Yani kullanıcı girişleri `SourceEx.Identity.API` içindeki `/api/v1.0/identity/auth/*` endpoint’lerinden geçiyor. Expense API tarafındaki `/api/v1.0/auth/me` endpoint’i ise yalnızca mevcut token’ın claim bilgisini göstermeye yarıyor.
 
 ### Hata yönetimi nasıl çalışıyor?
 
@@ -686,7 +700,7 @@ Tartışmalı veya geliştirilebilir taraflar:
 
 - Query tarafında ayrı bir read model yok; aynı write model okunuyor
 - Repository pattern yok; bu kötü değil ama domain büyüdükçe sorgu/persistence arayüzü şişebilir
-- Local JWT çözümü üretim kimlik mimarisi yerine geçmez
+- Kimlik modülü ayrılsa da henüz external IAM, MFA, lockout, password reset gibi ileri auth özellikleri yok
 - API’de `GetExpenseById` için sahiplik/department kontrolü yok; sadece authenticated user yeterli
 
 Özetle, mimari doğru yönde. Ama hâlâ öğretici/prototip ile production arasında bir yerde duruyor.
@@ -967,9 +981,9 @@ Ana validation stratejisi application katmanında:
 
 Bu, Clean Architecture açısından doğru yönde bir tercih. Çünkü validation HTTP’ye bağlı kalmıyor.
 
-Ancak bir istisna var: `AuthEndpoints.GenerateTokenAsync(...)` içinde manuel validation yapılıyor. Bunun nedeni bu akışın MediatR command’i olarak modellenmemiş olması.
+Ancak önemli bir istisna var: ayrı kimlik modülündeki login/register endpoint’leri application katmanı üzerinden değil, doğrudan minimal API + EF yaklaşımıyla yazılmış durumda. Yani auth tarafında validation daha manuel ilerliyor.
 
-Bu istisna kabul edilebilir, ama bütün sistem aynı desenle ilerleyecekse auth tarafı da application request olarak modellenebilirdi.
+Bu istisna kabul edilebilir; çünkü identity modülü burada önce işlevsel ayrışma amacıyla eklenmiş. Ama ileride mimariyi tamamen hizalamak istersen auth use case’leri için de `Application` benzeri ayrı bir katman kurulabilir.
 
 ### Exception handling nasıl?
 

@@ -1,13 +1,12 @@
 using Asp.Versioning;
-using BuildingBlocks.Messaging;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using SourceEx.API.Endpoints;
-using SourceEx.API.ExceptionHandling;
-using SourceEx.API.RateLimiting;
-using SourceEx.API.Security;
-using SourceEx.Application;
-using SourceEx.Infrastructure.Bootstrap;
-using SourceEx.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+using SourceEx.Identity.API.Data.Context;
+using SourceEx.Identity.API.Endpoints;
+using SourceEx.Identity.API.ExceptionHandling;
+using SourceEx.Identity.API.HealthChecks;
+using SourceEx.Identity.API.Security;
+using SourceEx.Identity.API.Seeding;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +14,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHttpLogging(_ => { });
 builder.Services.AddOpenApi();
-builder.Services.AddApiSecurity(builder.Configuration);
+builder.Services.AddIdentitySecurity(builder.Configuration);
 
 builder.Services.AddApiVersioning(options =>
 {
@@ -27,21 +26,33 @@ builder.Services.AddApiVersioning(options =>
         new HeaderApiVersionReader("x-api-version"));
 });
 
-builder.Services.AddRateLimiter(ApiRateLimiter.Configure);
-builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddMessageBroker(builder.Configuration);
+var connectionString = builder.Configuration.GetConnectionString("Database");
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("The 'ConnectionStrings:Database' setting is required.");
+
+builder.Services.AddDbContext<IdentityDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+});
+
+builder.Services.AddScoped<IdentityDataSeeder>();
+
+builder.Services.AddHealthChecks()
+    .AddCheck<IdentityDbContextHealthCheck>("identity-database", tags: ["ready"]);
 
 var app = builder.Build();
 
-await app.Services.EnsureSourceExInfrastructureAsync();
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<IdentityDataSeeder>();
+    await seeder.SeedAsync();
+}
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseHttpLogging();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();
 
 app.MapOpenApi();
 app.MapHealthChecks("/health/live", new HealthCheckOptions
@@ -53,8 +64,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     Predicate = registration => registration.Tags.Contains("ready")
 });
 
-app.MapAuthEndpoints();
-app.MapExpenseEndpoints();
+app.MapIdentityAuthEndpoints();
+app.MapIdentityUserEndpoints();
 
 app.Run();
 

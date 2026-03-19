@@ -8,18 +8,21 @@ SourceEx is a modular .NET solution designed around:
 - Domain-Driven Design
 - CQRS
 - event-driven integration
+- dedicated identity management
 - transactional outbox
 - worker-based asynchronous processing
 - local AI-assisted policy evaluation through Ollama
 
 The project models an expense management flow where:
 
-1. a user creates an expense
-2. the API stores the expense and writes an outbox event
-3. background publishing forwards the event to RabbitMQ
-4. workers react asynchronously
-5. a policy worker evaluates the expense risk through Ollama
-6. audit and notification workers react to downstream events
+1. a user authenticates through the identity module
+2. the identity module issues a JWT access token and refresh token
+3. the client calls the expense API with the issued JWT
+4. the API stores the expense and writes an outbox event
+5. background publishing forwards the event to RabbitMQ
+6. workers react asynchronously
+7. a policy worker evaluates the expense risk through Ollama
+8. audit and notification workers react to downstream events
 
 ## Solution Structure
 
@@ -104,6 +107,21 @@ Main responsibilities:
 
 The API is intentionally thin. It translates HTTP requests into application commands and queries.
 
+### SourceEx.Identity.API
+
+`SourceEx.Identity.API` is a dedicated identity module and should be treated as a separate service boundary.
+
+Main responsibilities:
+
+- user registration
+- login and password verification
+- refresh token rotation
+- role-aware user management
+- JWT issuance
+- local bootstrap users for development
+
+The expense API does not own usernames, passwords, or refresh tokens anymore. It only validates JWTs that were issued by this module.
+
 ### SourceEx.Worker.Notification
 
 `SourceEx.Worker.Notification` handles notification-oriented event processing.
@@ -152,6 +170,7 @@ SourceEx follows a layered dependency flow:
 - `Application` depends on `Domain` and shared abstractions
 - `Infrastructure` depends on `Application`, `Domain`, and contracts
 - `API` depends on `Application`, `Infrastructure`, contracts, and presentation concerns
+- `Identity.API` depends on shared security primitives and its own persistence model
 - `Workers` depend on contracts, shared messaging, and integration libraries
 
 This keeps business logic independent from transport and infrastructure details.
@@ -160,7 +179,7 @@ This keeps business logic independent from transport and infrastructure details.
 
 ### Expense Creation Flow
 
-1. A client obtains a JWT token from the local auth endpoint.
+1. A client obtains a JWT token from `SourceEx.Identity.API`.
 2. The client calls `POST /api/v1.0/expenses`.
 3. The API extracts `user_id` and `department_id` from the JWT claims.
 4. A `CreateExpenseCommand` is sent through MediatR.
@@ -192,14 +211,24 @@ This keeps business logic independent from transport and infrastructure details.
 5. Audit and notification workers consume the event.
 6. If Ollama is unavailable, deterministic fallback rules are used instead of failing the flow.
 
+### Identity Flow
+
+1. A client calls `POST /api/v1.0/identity/auth/login` with username or email plus password.
+2. `SourceEx.Identity.API` verifies the hashed password against its own user store.
+3. The identity service loads assigned roles and department information.
+4. A JWT access token is issued with `user_id`, `department_id`, `display_name`, and role claims.
+5. A refresh token is generated, hashed, and stored durably.
+6. The client uses the access token when calling `SourceEx.API`.
+
 ## Authentication and Authorization
 
-The solution currently uses local JWT bearer authentication for development and integration scenarios.
+The solution now has a dedicated identity module instead of issuing development tokens from the expense API.
 
 Important claims:
 
 - `user_id`
 - `department_id`
+- `display_name`
 
 Important roles:
 
@@ -213,7 +242,14 @@ Current policy model:
 - authenticated expense access requires `user_id` and `department_id`
 - approval additionally requires one of the privileged roles
 
-This is intentionally lightweight and can later be replaced or extended with Keycloak or another identity provider.
+Current login capabilities:
+
+- self-service employee registration
+- username/email + password login
+- refresh token rotation
+- local seeded worker, manager, finance, and admin users
+
+This can later be replaced or extended with Keycloak or another external identity provider, but the current structure already separates identity concerns from the expense domain.
 
 ## Validation Model
 
@@ -257,6 +293,9 @@ Stored data includes:
 
 - expenses
 - outbox messages
+- identity users
+- identity roles
+- identity refresh tokens
 
 The current design intentionally keeps write-side persistence simple. Future evolution may include:
 
@@ -294,6 +333,8 @@ Local services:
 - RabbitMQ with management UI
 - Ollama
 
+The PostgreSQL container now also initializes the dedicated `sourceex_identity` database for the identity module during first boot.
+
 This allows running the system without external cloud dependencies.
 
 ## Configuration
@@ -303,6 +344,7 @@ The most important configuration sections are:
 - `ConnectionStrings:Database`
 - `MessageBroker`
 - `Jwt`
+- `IdentitySeed`
 - `Ollama`
 
 These are defined in the host projects through `appsettings.json`.

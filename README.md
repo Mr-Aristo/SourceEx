@@ -1,10 +1,11 @@
 # SourceEx
 
-SourceEx is an expense approval focused `.NET` solution built around `Clean Architecture + Event-Driven` principles. The solution is split into `Domain`, `Application`, `Infrastructure`, `API`, `Worker`, and `BuildingBlocks` layers.
+SourceEx is an expense approval focused `.NET` solution built around `Clean Architecture + Event-Driven` principles. The solution is split into `Domain`, `Application`, `Infrastructure`, `API`, `Worker`, `Identity`, and `BuildingBlocks` layers.
 
 ## Services
 
 - `SourceEx.API`: Minimal API with JWT bearer authentication, API versioning, rate limiting, and the outbox publisher host.
+- `SourceEx.Identity.API`: Dedicated identity module for login, password hashing, refresh tokens, role assignment, and JWT issuance.
 - `SourceEx.Worker.Notification`: Listens to approval and risk assessment events.
 - `SourceEx.Worker.Audit`: Records system events into the audit log flow.
 - `SourceEx.Worker.Policy`: Consumes `ExpenseCreatedIntegrationEvent` messages and evaluates risk through Ollama.
@@ -32,32 +33,42 @@ docker compose up -d
 docker exec -it sourceex-ollama ollama pull gemma3
 ```
 
-3. Run the API and worker projects in separate terminals:
+3. Run the identity service, expense API, and worker projects in separate terminals:
 
 ```bash
+dotnet run --project src/SourceEx.Identity.API
 dotnet run --project src/SourceEx.API
 dotnet run --project src/SourceEx.Worker.Notification
 dotnet run --project src/SourceEx.Worker.Audit
 dotnet run --project src/SourceEx.Worker.Policy
 ```
 
-Note: use the actual HTTP/HTTPS address printed by ASP.NET Core when the API starts. The examples below assume `http://localhost:5000`.
+Note: use the actual HTTP/HTTPS addresses printed by ASP.NET Core when the services start. The examples below assume:
 
-4. Generate a local JWT token:
+- identity service: `http://localhost:5001`
+- expense API: `http://localhost:5000`
+
+4. Log in through the identity service:
 
 ```bash
-curl -X POST http://localhost:5000/api/v1.0/auth/token \
+curl -X POST http://localhost:5001/api/v1.0/identity/auth/login \
   -H "Content-Type: application/json" \
   -d '{
-    "userId": "employee-001",
-    "departmentId": "finance",
-    "roles": ["employee"]
+    "userNameOrEmail": "employee-001",
+    "password": "Passw0rd!"
   }'
 ```
 
-For the approve endpoint, use a token that has one of these roles: `manager`, `finance`, or `admin`.
+Seeded local accounts:
 
-5. Create an expense:
+- `employee-001` / `Passw0rd!`
+- `manager-001` / `Passw0rd!`
+- `finance-001` / `Passw0rd!`
+- `admin-001` / `Passw0rd!`
+
+Use `manager-001`, `finance-001`, or `admin-001` when you need an approver token.
+
+5. Create an expense with the returned `accessToken`:
 
 ```bash
 curl -X POST http://localhost:5000/api/v1.0/expenses \
@@ -72,10 +83,11 @@ curl -X POST http://localhost:5000/api/v1.0/expenses \
 
 ## JWT Claims
 
-Expense endpoints expect these claims:
+Expense endpoints expect these claims inside the JWT issued by `SourceEx.Identity.API`:
 
 - `user_id`
 - `department_id`
+- `display_name`
 
 The approve endpoint additionally requires one of these roles:
 

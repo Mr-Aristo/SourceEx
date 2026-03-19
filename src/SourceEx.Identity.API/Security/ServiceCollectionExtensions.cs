@@ -1,20 +1,27 @@
-using BuildingBlocks.Security;
 using System.Security.Claims;
 using System.Text;
+using BuildingBlocks.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using SourceEx.Identity.API.Entities;
 
-namespace SourceEx.API.Security;
+namespace SourceEx.Identity.API.Security;
 
 /// <summary>
-/// Registers API authentication and authorization services.
+/// Registers identity service security components.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddApiSecurity(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddIdentitySecurity(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<IdentitySeedOptions>()
+            .Bind(configuration.GetSection(IdentitySeedOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
@@ -25,6 +32,10 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException("The JWT signing key must be at least 32 characters long.");
 
         var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
+
+        services.AddScoped<IPasswordHasher<ApplicationUser>, PasswordHasher<ApplicationUser>>();
+        services.AddScoped<JwtTokenIssuer>();
+        services.AddScoped<RefreshTokenService>();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -52,14 +63,15 @@ public static class ServiceCollectionExtensions
                 policy.RequireClaim(ClaimNames.UserId);
                 policy.RequireClaim(ClaimNames.DepartmentId);
             })
-            .AddPolicy(AuthorizationPolicies.ExpenseApprover, policy =>
+            .AddPolicy(AuthorizationPolicies.IdentityAdmin, policy =>
             {
                 policy.RequireAuthenticatedUser();
                 policy.RequireClaim(ClaimNames.UserId);
                 policy.RequireClaim(ClaimNames.DepartmentId);
-                policy.RequireRole(RoleNames.ApprovalRoles.ToArray());
+                policy.RequireRole(RoleNames.Admin);
             });
 
         return services;
     }
 }
+
