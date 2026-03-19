@@ -1,40 +1,38 @@
 # SourceEx
 
-SourceEx, expense approval odakli bir `Clean Architecture + Event-Driven` .NET cozumudur. Cozum; `Domain`, `Application`, `Infrastructure`, `API`, `Worker` ve `BuildingBlocks` katmanlarina ayrilir.
+SourceEx is an expense approval focused `.NET` solution built around `Clean Architecture + Event-Driven` principles. The solution is split into `Domain`, `Application`, `Infrastructure`, `API`, `Worker`, and `BuildingBlocks` layers.
 
-## Servisler
+## Services
 
-- `SourceEx.API`: Minimal API, JWT bearer auth, versioning, rate limiting ve outbox publisher host'u.
-- `SourceEx.Worker.Notification`: Onay ve risk assessment event'lerini dinler.
-- `SourceEx.Worker.Audit`: Sistem olaylarini audit log akisina yazar.
-- `SourceEx.Worker.Policy`: `ExpenseCreatedIntegrationEvent` olaylarini alip Ollama ile risk analizi yapar.
-- `SourceEx.Integrations.Ollama`: Refit tabanli Ollama istemcisi ve AI policy entegrasyonu.
+- `SourceEx.API`: Minimal API with JWT bearer authentication, API versioning, rate limiting, and the outbox publisher host.
+- `SourceEx.Worker.Notification`: Listens to approval and risk assessment events.
+- `SourceEx.Worker.Audit`: Records system events into the audit log flow.
+- `SourceEx.Worker.Policy`: Consumes `ExpenseCreatedIntegrationEvent` messages and evaluates risk through Ollama.
+- `SourceEx.Integrations.Ollama`: Refit-based Ollama client and AI policy integration layer.
 
-## Altyapi
+## Infrastructure
 
-Local altyapi icin repo kokunde bir [docker-compose.yml](docker-compose.yml) bulunur. Bu dosya:
+The repository includes a root-level [docker-compose.yml](docker-compose.yml) for local infrastructure. It starts:
 
 - PostgreSQL
 - RabbitMQ Management
 - Ollama
 
-servislerini ayaga kaldirir.
+## Quick Start
 
-## Hizli Baslangic
-
-1. Altyapiyi baslat:
+1. Start the infrastructure:
 
 ```bash
 docker compose up -d
 ```
 
-2. Ollama modeli indir:
+2. Pull the Ollama model:
 
 ```bash
 docker exec -it sourceex-ollama ollama pull gemma3
 ```
 
-3. API ve worker projelerini ayri terminallerde calistir:
+3. Run the API and worker projects in separate terminals:
 
 ```bash
 dotnet run --project src/SourceEx.API
@@ -43,9 +41,9 @@ dotnet run --project src/SourceEx.Worker.Audit
 dotnet run --project src/SourceEx.Worker.Policy
 ```
 
-Not: `dotnet run` sirasinda ASP.NET Core'un bastigi HTTP/HTTPS adresini kullan. Asagidaki `curl` ornekleri varsayilan olarak `http://localhost:5000` uzerinden verilmis durumda.
+Note: use the actual HTTP/HTTPS address printed by ASP.NET Core when the API starts. The examples below assume `http://localhost:5000`.
 
-4. Local JWT token uret:
+4. Generate a local JWT token:
 
 ```bash
 curl -X POST http://localhost:5000/api/v1.0/auth/token \
@@ -57,9 +55,9 @@ curl -X POST http://localhost:5000/api/v1.0/auth/token \
   }'
 ```
 
-Approve endpoint'i icin `manager`, `finance` veya `admin` rolune sahip bir token kullan.
+For the approve endpoint, use a token that has one of these roles: `manager`, `finance`, or `admin`.
 
-5. Expense olustur:
+5. Create an expense:
 
 ```bash
 curl -X POST http://localhost:5000/api/v1.0/expenses \
@@ -74,32 +72,33 @@ curl -X POST http://localhost:5000/api/v1.0/expenses \
 
 ## JWT Claims
 
-Expense endpoint'leri su claim'leri bekler:
+Expense endpoints expect these claims:
 
 - `user_id`
 - `department_id`
 
-Approve endpoint'i ek olarak su rollerden birini ister:
+The approve endpoint additionally requires one of these roles:
 
 - `manager`
 - `finance`
 - `admin`
 
-## Ollama Akisi
+## Ollama Flow
 
-`SourceEx.Worker.Policy`, `ExpenseCreatedIntegrationEvent` olaylarini tuketir ve Ollama'nin `/api/chat` endpoint'ini kullanarak risk degerlendirmesi yapar. Ollama erisilemezse worker deterministic fallback kurallariyla akisi durdurmadan devam eder.
+`SourceEx.Worker.Policy` consumes `ExpenseCreatedIntegrationEvent` messages and uses Ollama's `/api/chat` endpoint to evaluate expense risk. If Ollama is unavailable, the worker continues the flow using deterministic fallback rules.
 
 ## Roadmap
 
-Uygulanan ve planlanan adimlar [ROADMAP.md](docs/ROADMAP.md) dosyasinda tutulur.
+Implemented and planned work is tracked in [ROADMAP.md](docs/ROADMAP.md).
 
 ## Documentation
 
-English project documentation is available in:
+Project documentation is available in:
 
 - [Project Documentation](docs/PROJECT_DOCUMENTATION.md)
 - [Testing Guide](docs/TESTING_GUIDE.md)
 - [Linux Local Production Guide](docs/linux-local-production-tr.md)
+- [Architecture Guide in Turkish](docs/architecture-tr.md)
 
 ## Client
 
