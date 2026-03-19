@@ -1,6 +1,6 @@
 # SourceEx Web Client
 
-This folder contains a standalone Angular client shell for the SourceEx API.
+This folder contains a standalone Angular client shell for the SourceEx expense API and identity service.
 
 ## Why It Lives Separately
 
@@ -10,11 +10,11 @@ The backend is still under active testing, so the client is intentionally isolat
 
 - Angular standalone application structure
 - typed API models aligned with the current backend contracts
-- token-based session handling
+- token and refresh-token based session handling
 - HTTP interceptors for bearer token and API version header support
 - facades for auth and expense flows
 - placeholder pages for:
-  - local token issuance
+  - login and registration through the identity module
   - expense creation
   - expense detail loading
   - expense approval
@@ -42,7 +42,11 @@ Start the Angular development server:
 npm start
 ```
 
-The development server uses `proxy.conf.json`, so browser calls to `/api` and `/health` are forwarded to `http://localhost:5000` without changing the backend.
+The development server uses `proxy.conf.json`, so browser calls are forwarded without changing the frontend code:
+
+- `/api/v1.0/identity/*` -> `http://localhost:5001`
+- `/api/*` -> `http://localhost:5000`
+- `/health` -> `http://localhost:5000`
 
 If your API runs on a different origin, update both:
 

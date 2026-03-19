@@ -1,290 +1,315 @@
 # SourceEx Linux Local Production Simulasyonu Rehberi
 
-Bu rehber, `SourceEx` projesini Linux çalışan bir sanal makineye publish ederek, gerçek production ortamına mümkün olduğunca benzeyen bir akış kurmak için yazıldı. Amaç sadece uygulamayı "çalıştırmak" değil; **publish, servis olarak ayağa kaldırma, Nginx arkasına alma, ortam değişkenleriyle yönetme ve log kontrolü yapma** gibi production benzeri adımları yerelde tekrarlayabilmektir.
+Bu rehber, `SourceEx` projesini Linux calisan bir sanal makineye publish ederek production'a olabildigince benzeyen bir yerel kurulum yapmak icin hazirlandi. Buradaki hedef sadece uygulamayi calistirmak degil; publish alma, servisleri arka planda surdurme, Nginx ile reverse proxy kurma, environment variable ile konfigürasyon yonetme ve loglari production benzeri sekilde izleme pratigi kazanmaktir.
 
-Bu doküman doğrudan mevcut repo yapısına bakılarak hazırlanmıştır. Yani anlatım genel değil, bu projedeki gerçek dosyalara dayalıdır.
+Bu doküman genel bir blog yazisi degildir. Dogrudan bu repo'nun bugunku yapisina bakilarak yazildi. Bu yüzden anlatim boyunca asagidaki gercek projeler referans alinmistir:
 
-## 1. Bu projeyi Linux ortamına publish etmek için genel olarak hangi adımları izlemem gerekir?
-
-SourceEx için en mantıklı yüksek seviye akış şöyledir:
-
-1. Windows veya geliştirme makinesinde projeyi derlenebilir hale getir.
-2. Veritabanı migration meselesini çöz.
-3. API ve worker projeleri için ayrı ayrı `dotnet publish` al.
-4. Publish çıktılarını Linux VM içine kopyala.
-5. Linux üzerinde gerekli runtime ve altyapıları hazırla.
-6. PostgreSQL, RabbitMQ ve Ollama’yı ayağa kaldır.
-7. API için Nginx reverse proxy kur.
-8. API ve worker’ları `systemd` servisleri olarak tanımla.
-9. Environment variable ve connection string’leri Linux tarafında ayarla.
-10. Health check, log ve uçtan uca testlerle doğrula.
-
-Bu projede tek bir yayınlanabilir uygulama yok. En azından şu host’lar ayrı ayrı düşünülmeli:
-
+- `SourceEx.Identity.API`
 - `SourceEx.API`
 - `SourceEx.Worker.Notification`
 - `SourceEx.Worker.Audit`
 - `SourceEx.Worker.Policy`
+- `docker-compose.yml` icindeki PostgreSQL, RabbitMQ ve Ollama altyapisi
 
-Yani publish süreci bir web API publish’inden ibaret değil; aynı zamanda üç ayrı worker servisini de kapsıyor.
+Bugun SourceEx'te iki ayri web host vardir:
 
-## 2. Projenin türüne göre publish süreci nasıl olmalı?
+- `SourceEx.Identity.API`: login, parola dogrulama, refresh token, rol ve claim uretimi
+- `SourceEx.API`: expense is akislari, business rule'lar, outbox ve event yayinlama
+
+Bu ayrim deployment tarafinda da cok onemlidir. Nginx arkasinda tek bir IP veya domain gorsen bile arkada iki farkli Kestrel host'u calisacaktir.
+
+## 1. Bu projeyi Linux ortamina publish etmek icin genel olarak hangi adimlari izlemem gerekir?
+
+Bu repo icin en mantikli yuksek seviye akis su sekildedir:
+
+1. Gelistirme makinesinde cozumun derlenebilir oldugundan emin ol.
+2. Hangi host projelerin publish edilecegini netlestir.
+3. Her host proje icin ayri `dotnet publish` al.
+4. Publish ciktisini Linux VM icine kopyala.
+5. Linux tarafinda .NET runtime, Nginx ve systemd ortamini hazirla.
+6. PostgreSQL, RabbitMQ ve Ollama'yi `docker compose` ile ayaga kaldir.
+7. `SourceEx.Identity.API` ve `SourceEx.API` icin systemd servisleri tanimla.
+8. Worker servislerini ayri systemd servisleri olarak tanimla.
+9. Nginx ile gelen istekleri dogru host'a yonlendir.
+10. Health check, login, expense olusturma ve event akislarini test et.
+11. `journalctl`, Nginx loglari ve container loglari ile dogrulama yap.
+
+Bu projede publish edilecek uygulamalar sunlardir:
+
+- `src/SourceEx.Identity.API`
+- `src/SourceEx.API`
+- `src/SourceEx.Worker.Notification`
+- `src/SourceEx.Worker.Audit`
+- `src/SourceEx.Worker.Policy`
+
+Yani burada deployment, tek bir API publish etmekten ibaret degildir. Iki ayri web uygulamasi ve uc ayri background worker vardir.
+
+## 2. Projenin turune gore publish sureci nasil olmali?
+
+### `SourceEx.Identity.API`
+
+[SourceEx.Identity.API.csproj](../src/SourceEx.Identity.API/SourceEx.Identity.API.csproj) `Microsoft.NET.Sdk.Web` kullaniyor. Bu bir ASP.NET Core Web API host'udur. Publish sonrasi Kestrel ile calisir ve dis dunyaya dogrudan degil, Nginx reverse proxy arkasindan sunulmasi daha dogrudur.
+
+Bu servis:
+
+- kullanici kaydeder
+- login yapar
+- password hash kontrol eder
+- refresh token dondurur
+- roller ve claim'ler ile JWT üretir
 
 ### `SourceEx.API`
 
-Bu proje [SourceEx.API.csproj](../src/SourceEx.API/SourceEx.API.csproj) dosyasından görüldüğü üzere `Microsoft.NET.Sdk.Web` kullanıyor. Yani bu bir **ASP.NET Core Web API** uygulamasıdır.
+[SourceEx.API.csproj](../src/SourceEx.API/SourceEx.API.csproj) da `Microsoft.NET.Sdk.Web` kullaniyor. Bu host expense sistemi icin asil business API'dir.
 
-Bu nedenle:
+Bu servis:
 
-- publish sonrası bir `dll` ve host dosyaları oluşur
-- arka planda Kestrel ile çalışır
-- dış dünyaya doğrudan değil, çoğunlukla Nginx reverse proxy arkasından açılması tavsiye edilir
+- expense request alir
+- MediatR tabanli application akisini calistirir
+- domain kurallarini uygular
+- veritabani yazimini ve outbox kaydini yapar
 
-### Worker projeleri
+### Worker servisleri
 
-Şu projeler `Microsoft.NET.Sdk.Worker` kullanıyor:
+Su projeler worker host'tur:
 
 - [SourceEx.Worker.Notification.csproj](../src/SourceEx.Worker.Notification/SourceEx.Worker.Notification.csproj)
 - [SourceEx.Worker.Audit.csproj](../src/SourceEx.Worker.Audit/SourceEx.Worker.Audit.csproj)
 - [SourceEx.Worker.Policy.csproj](../src/SourceEx.Worker.Policy/SourceEx.Worker.Policy.csproj)
 
-Bunlar web uygulaması değildir. Nginx arkasına konulmazlar. Bunlar:
+Bunlar web uygulamasi degildir. Nginx arkasina alinmazlar. RabbitMQ tuketirler ve arka planda surekli calisirlarsa anlamli olurlar. Bu nedenle Linux'ta en dogal calisma bicimleri `systemd` servisleridir.
 
-- arka planda sürekli çalışan process’lerdir
-- RabbitMQ’ya bağlanır
-- event tüketir
-- log üretir
+Bu projeye ozel publish yaklasimi su olmali:
 
-Bu yüzden en doğal Linux çalıştırma biçimleri `systemd` servisidir.
+- `SourceEx.Identity.API`: `dotnet publish` + `systemd` + `Nginx`
+- `SourceEx.API`: `dotnet publish` + `systemd` + `Nginx`
+- Worker'lar: `dotnet publish` + `systemd`
+- PostgreSQL, RabbitMQ, Ollama: `docker compose`
 
-### Bu proje için publish yaklaşımı
+Bu hibrit model yerelde production'a oldukca benzer bir kurulum sunar.
 
-Bu repo için en mantıklı yaklaşım şudur:
-
-- API: `dotnet publish` + `systemd` + `Nginx`
-- Worker’lar: `dotnet publish` + `systemd`
-- PostgreSQL / RabbitMQ / Ollama: mevcut [docker-compose.yml](../docker-compose.yml) ile container içinde
-
-Bu hibrit model yerelde production’a oldukça benzer bir deneyim verir:
-
-- altyapı servisleri container’da
-- uygulama servisleri host üzerinde systemd ile
-- giriş noktası Nginx
-
-Bu repo şu an Dockerfile içermediği için, ilk aşamada tüm .NET host’ları container’a almak yerine bu model daha uygulanabilir.
-
-## 3. Local Linux makinede production benzeri ortam kurmak için hangi bileşenler gerekir?
+## 3. Local Linux makinede production benzeri ortam kurmak icin hangi bilesenler gerekir?
 
 ### .NET Runtime / SDK
 
-Bu çözüm `net10.0` hedefliyor. Bunu `.csproj` dosyalarında açıkça görüyoruz.
+Tum .NET projeleri `net10.0` hedefliyor. Bu nedenle Linux VM icinde en azindan .NET 10 runtime ailesine ihtiyacin var.
 
-Linux VM’de iki farklı yaklaşım var:
+Pratikte en kolay secenek:
 
-#### Seçenek A: Framework-dependent publish
+- `.NET SDK 10` kurmak
 
-Bu yaklaşımda Linux makinede runtime kurulu olur, publish çıktısı daha küçük olur.
+Bu sayede hem uygulama calisir hem de `dotnet --info`, `dotnet ef`, `dotnet publish` gibi komutlari Linux uzerinde de kullanabilirsin.
 
-Gerekli olan:
+Eger framework-dependent publish kullanacaksan gerekenler:
 
-- API için `ASP.NET Core Runtime 10`
-- Worker’lar için `.NET Runtime 10`
-
-Pratikte en kolay yol genelde `.NET SDK 10` kurmaktır. Özellikle sunucuda `dotnet --info`, `dotnet ef` veya hızlı teşhis yapacaksan SDK işi kolaylaştırır.
-
-#### Seçenek B: Self-contained publish
-
-Bu yaklaşımda Linux makinede runtime kurman gerekmez. Ama çıktı boyutu artar.
-
-Yerel production simülasyonu için iki yaklaşım da olur. Ben bu proje özelinde ilk aşamada **framework-dependent publish + runtime kurulu Linux** öneririm. Çünkü:
-
-- log ve komut teşhisi daha kolaydır
-- publish çıktısı küçüktür
-- birden fazla host projeyi yönetmek daha pratiktir
+- `ASP.NET Core Runtime 10` for `SourceEx.Identity.API`
+- `ASP.NET Core Runtime 10` for `SourceEx.API`
+- `.NET Runtime 10` for worker projeleri
 
 ### Nginx
 
-Nginx bu projede iki iş için değerlidir:
+Nginx bu projede iki sebeple onemlidir:
 
-- dış istekleri `SourceEx.API`’ye reverse proxy ile yönlendirmek
-- istersen Angular client build çıktısını statik olarak servis etmek
+- tek giris noktasi saglamak
+- farkli Kestrel host'larina path tabanli reverse proxy yapmak
 
-Worker’lar Nginx arkasına konmaz.
+Yani istemci acisindan tek IP veya domain gorunur; ama Nginx arkada:
+
+- `/api/v1.0/identity/*` isteklerini `SourceEx.Identity.API`'ye
+- diger expense API isteklerini `SourceEx.API`'ye
+
+yonlendirebilir.
 
 ### systemd
 
-`systemd`, API ve worker süreçlerini servis olarak yönetmek için gerekir. Bunun avantajı:
+`systemd` sayesinde:
 
-- arka planda çalışırlar
-- sunucu yeniden başlasa otomatik ayağa kalkarlar
-- logları `journalctl` ile izlenebilir
-- restart politikası verilebilir
+- servisler arka planda calisir
+- VM yeniden baslayinca otomatik ayağa kalkar
+- restart policy tanimlanabilir
+- loglari `journalctl` ile izlenir
 
-### environment variables
+Bu repo'da web host ve worker'larin tamami icin systemd kullanmak mantiklidir.
 
-Bu projede production benzeri kurulum için environment variable kullanmak çok mantıklıdır. Çünkü repo içinde şu anda:
+### Environment variables
 
-- `appsettings.Production.json` yok
-- sırları ve adresleri `appsettings.json` içinde bırakmak iyi bir production alışkanlığı değil
+Bu repo'da `appsettings.Production.json` dosyalari yok. Bu nedenle production benzeri kurulumda config degerlerini environment file ile vermek en saglikli secenektir.
 
-Özellikle şu ayarlar dışarı alınmalıdır:
+Ozellikle disari alinmasi gereken ayarlar:
 
 - `ConnectionStrings__Database`
 - `MessageBroker__Host`
 - `MessageBroker__Port`
+- `MessageBroker__VirtualHost`
 - `MessageBroker__Username`
 - `MessageBroker__Password`
 - `Jwt__Issuer`
 - `Jwt__Audience`
 - `Jwt__SigningKey`
+- `Jwt__AccessTokenLifetimeMinutes`
+- `Jwt__RefreshTokenLifetimeDays`
+- `IdentitySeed__Enabled`
+- `IdentitySeed__DemoPassword`
 - `Ollama__BaseUrl`
 - `Ollama__Model`
 
 ### Reverse proxy
 
-API doğrudan internet yüzüne açılmak yerine Nginx arkasında çalışmalıdır. Nginx:
+Bu projede reverse proxy mantigi soyledir:
 
-- 80/443 portlarını dinler
-- gelen isteği Kestrel’e yollar
-- SSL termination yapabilir
-- tek giriş noktası sağlar
+- Kestrel sadece `127.0.0.1` gibi loopback adreslerde dinler
+- disariya sadece Nginx acilir
+- SSL termination gerekiyorsa Nginx'te yapilir
+
+Bu yaklasim, local production simulasyonunu daha guvenli ve daha gercekci yapar.
 
 ### Logging
 
-Bu projede şu an dosya tabanlı özel bir logging çözümü yok. Serilog/Seq/OpenTelemetry henüz yok.
+Projede Serilog, Seq veya OpenTelemetry henuz yok. Bu nedenle su anki en dogal loglama yontemi:
 
-Dolayısıyla Linux local production simülasyonunda en gerçekçi başlangıç:
+- uygulama loglari `stdout/stderr`
+- systemd altinda `journalctl`
+- Nginx access/error log
+- Docker container loglari
 
-- uygulama loglarını `stdout/stderr` ile üretmek
-- `systemd` altında `journalctl` ile izlemek
-
-Bu repo’nun mevcut durumuna en uygun yaklaşım budur.
+Yani simdilik "production benzeri logging" demek, merkezi bir log platformundan cok sistem servis loglarini disiplinli izlemek demektir.
 
 ### HTTPS ve sertifika konusu
 
-Eğer local Linux VM’de production’a benzer HTTPS testi yapmak istiyorsan iki yol var:
+Local Linux VM'de production benzeri HTTPS denemek istersen:
 
 - self-signed sertifika
-- `mkcert` gibi araçla local trusted sertifika
+- `mkcert`
 
-Ama bu projede şu an ters proxy arkasında doğru forwarded headers desteği kodda eklenmemiş. Bu önemli bir ayrıntı. Eğer Nginx HTTPS terminate edecekse, uygulamanın reverse proxy arkasında çalıştığını doğru anlaması gerekir.
+gibi araclar kullanabilirsin.
 
-Mevcut kodda [Program.cs](../src/SourceEx.API/Program.cs) içinde:
+Ama bu repo'da bir eksik var: [Program.cs](../src/SourceEx.API/Program.cs) ve [Program.cs](../src/SourceEx.Identity.API/Program.cs) icinde `UseHttpsRedirection()` var, fakat `UseForwardedHeaders()` yok. Bu, Nginx HTTPS terminate ederken scheme algisinda sorun cikarabilir. Bu nedenle ilk kurulumda once HTTP reverse proxy ile ilerlemek daha risksizdir.
 
-- `UseHttpsRedirection()` var
-- ama `UseForwardedHeaders()` yok
-
-Bu nedenle HTTPS ve proxy birlikte kullanılınca redirect davranışında sorun yaşanabilir. Bu, production hazırlığı açısından şu anki eksiklerden biridir.
-
-## 4. Projeyi publish etmeden önce proje içinde kontrol etmem gereken dosya ve ayarlar neler?
-
-Bu bölüm çok önemlidir. Çünkü publish sorunu çoğu zaman `dotnet publish` komutundan değil, yanlış yapılandırmadan çıkar.
+## 4. Projeyi publish etmeden once proje icinde kontrol etmem gereken dosya ve ayarlar neler?
 
 ### `appsettings.json`
 
-Şu an şu dosyalar var:
+Kontrol etmen gereken temel dosyalar:
 
+- [src/SourceEx.Identity.API/appsettings.json](../src/SourceEx.Identity.API/appsettings.json)
 - [src/SourceEx.API/appsettings.json](../src/SourceEx.API/appsettings.json)
 - [src/SourceEx.Worker.Notification/appsettings.json](../src/SourceEx.Worker.Notification/appsettings.json)
 - [src/SourceEx.Worker.Audit/appsettings.json](../src/SourceEx.Worker.Audit/appsettings.json)
 - [src/SourceEx.Worker.Policy/appsettings.json](../src/SourceEx.Worker.Policy/appsettings.json)
 
-Buradaki mevcut değerler tamamen local geliştirme odaklı:
+Bu dosyalardaki ayarlar simdilik local varsayimlarla geliyor:
 
-- DB: `localhost:5432`
-- RabbitMQ: `localhost:5672`
-- Ollama: `localhost:11434`
-- JWT signing key: sabit ve repo içinde
+- PostgreSQL `localhost:5432`
+- RabbitMQ `localhost:5672`
+- Ollama `localhost:11434`
+- JWT signing key repo icinde sabit
 
-Linux VM’ye geçerken bunlar gözden geçirilmelidir. Eğer altyapıyı aynı VM içinde container olarak çalıştıracaksan `localhost` hâlâ iş görebilir. Ama başka makineler veya özel bridge ağları kullanacaksan bu ayarlar değişir.
+Linux VM icinde de Docker altyapisini ayni host'ta calistiracaksan `localhost` veya `127.0.0.1` halen kullanilabilir. Ama host'lari ayirirsan tum bu degerleri guncellemen gerekir.
 
 ### `appsettings.Production.json`
 
-Repo içinde şu an **hiçbir `appsettings.Production.json` dosyası yok**.
+Repo'da su an `appsettings.Production.json` dosyalari yok. Bu dogrudan hata degil ama production hazirligi eksigidir. Iki yol vardir:
 
-Bu bir eksik değil ama production benzeri ortam için hazırlık eksikliğidir. İki yaklaşım var:
+- Production ayarlarini `appsettings.Production.json` icine koymak
+- Tum production degerlerini `systemd` environment file ile vermek
 
-#### Yaklaşım 1
-
-`appsettings.Production.json` dosyaları oluşturursun.
-
-#### Yaklaşım 2
-
-Tüm production değerlerini `systemd` environment file üzerinden verirsin.
-
-Bu proje için ikinci yaklaşım daha temiz olabilir. Çünkü sırlar dosyaya commit edilmez.
+Bu proje icin ikinci yontem daha temizdir.
 
 ### `launchSettings.json`
 
-Repo’da `launchSettings.json` bulunmuyor. Bu kötü bir şey değil. Production deployment için zaten kritik dosya değildir. Visual Studio veya local debug için daha anlamlıdır.
+Repo'da `launchSettings.json` yok. Bu production deployment acisindan problem degildir. Zaten o dosya esas olarak local IDE debug kolayligi icindir.
 
-### `Program.cs`
+### `Program.cs` ve startup davranisi
 
-[Program.cs](../src/SourceEx.API/Program.cs) incelendiğinde production hazırlığı açısından şunlar görülüyor:
+[SourceEx.API/Program.cs](../src/SourceEx.API/Program.cs) tarafinda dikkat edilmesi gerekenler:
 
 - `UseExceptionHandler()` var
 - `UseHttpsRedirection()` var
-- `UseAuthentication()` / `UseAuthorization()` var
+- `UseAuthentication()` ve `UseAuthorization()` var
 - `UseRateLimiter()` var
-- health endpoint’leri var
+- health endpoint'leri var
 
-Ama şu noktalar eksik:
+[SourceEx.Identity.API/Program.cs](../src/SourceEx.Identity.API/Program.cs) tarafinda:
 
-- `UseForwardedHeaders()` yok
-- HSTS yok
-- özel Kestrel binding ayarı yok
+- `UseExceptionHandler()` var
+- `UseHttpsRedirection()` var
+- `UseAuthentication()` ve `UseAuthorization()` var
+- startup sirasinda `IdentityDataSeeder` calisiyor
+- health endpoint'leri var
 
-Bu, Nginx arkasında HTTPS terminate edilen bir senaryoda dikkat gerektirir.
+Eksik olan nokta:
 
-### Kestrel ayarları
+- her iki host'ta da `UseForwardedHeaders()` yok
 
-Projede özel Kestrel konfigürasyonu bulunmuyor. Yani:
+Bu, Nginx reverse proxy ile HTTPS terminate edilen senaryoda akilda tutulmalidir.
 
-- `appsettings.json` içinde Kestrel section yok
-- `Program.cs` içinde `ConfigureKestrel(...)` yok
+### Kestrel ayarlari
 
-Bu durumda Kestrel binding’i environment variable ile vermek en temiz çözümdür:
+Projede ozel Kestrel config'i yok:
+
+- `ConfigureKestrel(...)` yok
+- `Kestrel` section'i yok
+
+Bu nedenle Linux tarafinda port binding'i environment variable ile sabitlemek en temiz yoldur:
 
 ```bash
 ASPNETCORE_URLS=http://127.0.0.1:5005
 ```
 
-Ben local production simülasyonunda API’yi sadece loopback üzerinde dinletecek şekilde açmanı öneririm. Böylece dış dünyaya sadece Nginx açık olur.
+Expense API icin.
 
-### Port ayarları
+```bash
+ASPNETCORE_URLS=http://127.0.0.1:5006
+```
 
-Şu an projede sabit production port tanımı yok. Geliştirme notlarında `http://localhost:5000` örneklenmiş, ama bu runtime garantisi değildir.
+Identity API icin.
 
-Bu yüzden Linux tarafında portları açıkça belirlemek gerekir:
+### Port ayarlari
 
-- API Kestrel: örneğin `127.0.0.1:5005`
-- PostgreSQL: container içinde `5432`
-- RabbitMQ: container içinde `5672`
-- Ollama: container içinde `11434`
-- Nginx: `80` veya `443`
+Yerel production simulasyonunda su dagilim temiz olur:
 
-### Connection string’ler
+- `SourceEx.API`: `127.0.0.1:5005`
+- `SourceEx.Identity.API`: `127.0.0.1:5006`
+- PostgreSQL: `127.0.0.1:5432`
+- RabbitMQ: `127.0.0.1:5672`
+- RabbitMQ management UI: `127.0.0.1:15672`
+- Ollama: `127.0.0.1:11434`
+- Nginx: `80` ve gerekiyorsa `443`
 
-API için veritabanı zorunludur. [AddInfrastructure](../src/SourceEx.Infrastructure/DependencyInjection.cs) içinde `ConnectionStrings:Database` boşsa uygulama hiç başlamaz.
+### Connection string'ler
 
-Bu yüzden API servisi ayağa kalkmıyorsa ilk bakılacak yerlerden biri budur.
+Bu projede iki ayri veritabani mantigi var:
 
-### Dış servis bağımlılıkları
+- expense sistemi icin `sourceex`
+- identity sistemi icin `sourceex_identity`
 
-Bu proje tek başına başlamaz. Şunlara bağımlıdır:
+Expense API tarafinda [AddInfrastructure](../src/SourceEx.Infrastructure/DependencyInjection.cs) `ConnectionStrings:Database` olmadan baslamaz.
+
+Identity API tarafinda [Program.cs](../src/SourceEx.Identity.API/Program.cs) icindeki `IdentityDbContext` de `ConnectionStrings:Database` ister.
+
+### Dis servis bagimliliklari
+
+Bu repo tek basina ayakta kalmaz. Su servisler gerekir:
 
 - PostgreSQL
 - RabbitMQ
 - Ollama
 
-Ayrıca migration dosyaları repo içinde olmadığı için veritabanı da publish öncesi hazır sayılmaz. Bu kritik nokta yerel production simülasyonunda gözden kaçabilir.
+Ek bir proje-ozel ayrinti:
 
-## 5. Linux makinede deployment için örnek klasör yapısı nasıl olmalı?
+- [deploy/postgres/init/01-create-sourceex-identity-db.sh](../deploy/postgres/init/01-create-sourceex-identity-db.sh) ilk PostgreSQL boot'unda `sourceex_identity` veritabanini olusturur
 
-Bu proje için önerdiğim klasör yapısı:
+Ama eger Docker volume daha once olustuysa bu init script bir daha calismayabilir. O durumda `sourceex_identity` veritabanini elle olusturman gerekebilir.
+
+## 5. Linux makinede deployment icin ornek bir klasor yapisi nasil olmali?
+
+Bu repo icin onerilen klasor yapisi:
 
 ```text
 /opt/sourceex/
+├─ identity-api/
+│  ├─ current/
+│  └─ releases/
 ├─ api/
 │  ├─ current/
 │  └─ releases/
@@ -302,32 +327,30 @@ Bu proje için önerdiğim klasör yapısı:
    └─ sourceex-web/
 
 /etc/sourceex/
+├─ sourceex-identity-api.env
 ├─ sourceex-api.env
 ├─ sourceex-worker-notification.env
 ├─ sourceex-worker-audit.env
 └─ sourceex-worker-policy.env
 ```
 
-Bu yapının mantığı:
+Bu yapinin mantigi sudur:
 
-- uygulama binary’leri `/opt` altında
-- environment ve secret benzeri ayarlar `/etc` altında
-- istersen her publish’i `releases/2026-03-19_1200` gibi versiyonlu klasöre koyup `current` symlink’i ile yönetebilirsin
+- binary ve publish dosyalari `/opt` altinda
+- environment dosyalari `/etc` altinda
+- ileride rollback istersen `releases/` klasorleri ile surumlu dagitim yapabilirsin
 
-İlk kurulum için symlink şart değil. Sade kurulum da olur:
+## 6. `dotnet publish` komutu bu proje icin nasil calistirilmali?
 
-```text
-/opt/sourceex/api/
-/opt/sourceex/workers/notification/
-/opt/sourceex/workers/audit/
-/opt/sourceex/workers/policy/
+Her host proje icin ayri publish alman gerekir.
+
+### Identity API publish
+
+```bash
+dotnet publish src/SourceEx.Identity.API/SourceEx.Identity.API.csproj -c Release -o ./publish/identity-api
 ```
 
-## 6. `dotnet publish` komutu bu proje için nasıl çalıştırılmalı?
-
-Bu projede her host proje için ayrı publish alman gerekir.
-
-### API publish
+### Expense API publish
 
 ```bash
 dotnet publish src/SourceEx.API/SourceEx.API.csproj -c Release -o ./publish/api
@@ -351,68 +374,59 @@ dotnet publish src/SourceEx.Worker.Audit/SourceEx.Worker.Audit.csproj -c Release
 dotnet publish src/SourceEx.Worker.Policy/SourceEx.Worker.Policy.csproj -c Release -o ./publish/worker-policy
 ```
 
-### Linux runtime belirterek publish
-
-Windows’tan Linux VM’ye taşıyacaksan şu yaklaşım daha net olabilir:
+Windows'tan Linux'a kopyalayacaksan runtime'i acikca belirtmek daha nettir:
 
 ```bash
+dotnet publish src/SourceEx.Identity.API/SourceEx.Identity.API.csproj -c Release -r linux-x64 --self-contained false -o ./publish/identity-api
 dotnet publish src/SourceEx.API/SourceEx.API.csproj -c Release -r linux-x64 --self-contained false -o ./publish/api
 ```
 
-Aynı mantığı worker’lara da uygulayabilirsin.
+Self-contained kullanmak istersen runtime'i Linux'a kurmak zorunda kalmazsin, ama cikti boyutu buyur.
 
-Bu komutta:
+## 7. Publish ciktlarini Linux tarafinda nereye koymak mantikli olur?
 
-- `-r linux-x64`: Linux hedefini belirtir
-- `--self-contained false`: runtime Linux tarafında kurulu olacak demektir
+Pratik dagilim:
 
-Eğer self-contained istersen:
+- `/opt/sourceex/identity-api/current`
+- `/opt/sourceex/api/current`
+- `/opt/sourceex/workers/notification/current`
+- `/opt/sourceex/workers/audit/current`
+- `/opt/sourceex/workers/policy/current`
 
-```bash
-dotnet publish src/SourceEx.API/SourceEx.API.csproj -c Release -r linux-x64 --self-contained true -o ./publish/api
-```
+Ilk kurulumda basit klasor modeli yeterlidir. Ileride rollback ihtiyaci dogarsa `releases/current` symlink modeline gecebilirsin.
 
-Ama bu durumda çıktı büyür.
+## 8. Nginx ile bu projeyi nasil ayaga kaldiririm?
 
-## 7. Publish çıktılarını Linux tarafında nereye koymak mantıklı olur?
+### Reverse proxy mantigi
 
-Bu proje için pratik öneri:
+Bu projede Nginx'in gorevi sadece bir API'ye proxy yapmak degil, iki farkli API host'unu tek giris noktasi altinda birlestirmektir.
 
-- API: `/opt/sourceex/api/current`
-- Notification worker: `/opt/sourceex/workers/notification/current`
-- Audit worker: `/opt/sourceex/workers/audit/current`
-- Policy worker: `/opt/sourceex/workers/policy/current`
+Mantik su sekildedir:
 
-Eğer basit kalmak istiyorsan:
+1. `SourceEx.Identity.API` `127.0.0.1:5006` uzerinde calisir.
+2. `SourceEx.API` `127.0.0.1:5005` uzerinde calisir.
+3. Nginx `80` veya `443` portunda dis istek alir.
+4. `/api/v1.0/identity/` ile baslayan istekleri `5006`'ya gonderir.
+5. Diger API isteklerini `5005`'e gonderir.
 
-- `/opt/sourceex/api`
-- `/opt/sourceex/workers/notification`
-- `/opt/sourceex/workers/audit`
-- `/opt/sourceex/workers/policy`
+Bu sayede client tarafinda tek base address kullanmak cok daha kolay olur.
 
-Ben ilk aşamada basit klasör yapısını öneririm. Rollback ihtiyacı doğduğunda `releases/current` modeline geçersin.
-
-## 8. Nginx ile bu projeyi nasıl ayağa kaldırırım?
-
-### Reverse proxy mantığı
-
-`SourceEx.API` doğrudan 80 veya 443 portunu dinlemek zorunda değildir. Hatta production benzeri yaklaşımda genelde dinlememelidir.
-
-Mantık şudur:
-
-1. `SourceEx.API` Kestrel ile örneğin `127.0.0.1:5005` üzerinde çalışır.
-2. Nginx dışarıdan `80` veya `443` portunda istek alır.
-3. Nginx isteği Kestrel’e iletir.
-4. Kullanıcı sadece Nginx’i görür.
-
-### Örnek Nginx config
-
-Domain yoksa IP ile de çalıştırabilirsin. Basit bir config:
+### Ornek Nginx config
 
 ```nginx
 server {
     listen 80;
     server_name _;
+
+    location /api/v1.0/identity/ {
+        proxy_pass         http://127.0.0.1:5006;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location / {
         proxy_pass         http://127.0.0.1:5005;
@@ -426,13 +440,13 @@ server {
 }
 ```
 
-Bu dosyayı örneğin şuraya koyabilirsin:
+Dosya konumu ornegi:
 
 ```text
 /etc/nginx/sites-available/sourceex
 ```
 
-Sonra:
+Etkinlestirme:
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/sourceex /etc/nginx/sites-enabled/sourceex
@@ -440,38 +454,53 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-### Domain yoksa IP ile local test nasıl yapılır?
+### Domain yoksa IP ile local test nasil yapilir?
 
-Eğer Linux VM IP adresin `192.168.1.50` ise:
+Linux VM IP adresin `192.168.1.50` ise:
 
 ```bash
 curl http://192.168.1.50/health/live
 ```
 
-veya tarayıcıdan:
-
-```text
-http://192.168.1.50
-```
-
-Eğer yalnızca API test edeceksen:
+Login testi:
 
 ```bash
-curl http://192.168.1.50/api/v1.0/auth/token
+curl -X POST http://192.168.1.50/api/v1.0/identity/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"userNameOrEmail":"manager-001","password":"Passw0rd!"}'
 ```
+
+Yani domain olmadan da production benzeri reverse proxy akisini test edebilirsin.
 
 ### HTTPS kullanacaksan
 
-Örnek TLS config eklenebilir. Ama önemli uyarı:
+HTTPS tarafina gececeksen once `UseForwardedHeaders()` eksigini not et. Mevcut halde ilk guvenli adim HTTP reverse proxy ile baslamaktir. HTTPS'ye gecmeden once proxy header destegi eklemek daha dogrudur.
 
-Mevcut kodda `UseForwardedHeaders()` olmadığı için Nginx üzerinde HTTPS terminate edip Kestrel’e HTTP ile devam ettiğinde yönlendirme veya scheme algısında sorun çıkabilir. Bu nedenle şu anki haliyle en güvenli yerel simülasyon:
+## 9. Uygulamayi arka planda surekli calistirmak icin systemd servisi nasil yazilir?
 
-- önce HTTP reverse proxy ile test et
-- sonra HTTPS gerekiyorsa uygulamaya forwarded header desteği ekle
+### Identity API icin ornek service dosyasi
 
-## 9. Uygulamayı arka planda sürekli çalıştırmak için systemd servisi nasıl yazılır?
+```ini
+[Unit]
+Description=SourceEx Identity API
+After=network-online.target docker.service
+Wants=network-online.target
 
-### API için örnek service dosyası
+[Service]
+WorkingDirectory=/opt/sourceex/identity-api/current
+ExecStart=/usr/bin/dotnet /opt/sourceex/identity-api/current/SourceEx.Identity.API.dll
+Restart=always
+RestartSec=5
+User=www-data
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5006
+EnvironmentFile=/etc/sourceex/sourceex-identity-api.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Expense API icin ornek service dosyasi
 
 ```ini
 [Unit]
@@ -493,13 +522,7 @@ EnvironmentFile=/etc/sourceex/sourceex-api.env
 WantedBy=multi-user.target
 ```
 
-Dosya adı örneği:
-
-```text
-/etc/systemd/system/sourceex-api.service
-```
-
-### Notification worker için örnek service
+### Notification worker service
 
 ```ini
 [Unit]
@@ -520,7 +543,7 @@ EnvironmentFile=/etc/sourceex/sourceex-worker-notification.env
 WantedBy=multi-user.target
 ```
 
-### Audit worker için örnek service
+### Audit worker service
 
 ```ini
 [Unit]
@@ -541,7 +564,7 @@ EnvironmentFile=/etc/sourceex/sourceex-worker-audit.env
 WantedBy=multi-user.target
 ```
 
-### Policy worker için örnek service
+### Policy worker service
 
 ```ini
 [Unit]
@@ -562,182 +585,172 @@ EnvironmentFile=/etc/sourceex/sourceex-worker-policy.env
 WantedBy=multi-user.target
 ```
 
-### systemd komut akışı
-
-Servis dosyalarını yazdıktan sonra:
+### systemd komut akisi
 
 ```bash
 sudo systemctl daemon-reload
+sudo systemctl enable sourceex-identity-api
 sudo systemctl enable sourceex-api
 sudo systemctl enable sourceex-worker-notification
 sudo systemctl enable sourceex-worker-audit
 sudo systemctl enable sourceex-worker-policy
 ```
 
-Başlat:
+Baslat:
 
 ```bash
+sudo systemctl start sourceex-identity-api
 sudo systemctl start sourceex-api
 sudo systemctl start sourceex-worker-notification
 sudo systemctl start sourceex-worker-audit
 sudo systemctl start sourceex-worker-policy
 ```
 
-Durum kontrolü:
+Durum kontrolu:
 
 ```bash
+sudo systemctl status sourceex-identity-api
 sudo systemctl status sourceex-api
 sudo systemctl status sourceex-worker-notification
 sudo systemctl status sourceex-worker-audit
 sudo systemctl status sourceex-worker-policy
 ```
 
-Restart:
-
-```bash
-sudo systemctl restart sourceex-api
-```
-
 Log izleme:
 
 ```bash
+journalctl -u sourceex-identity-api -f
 journalctl -u sourceex-api -f
 journalctl -u sourceex-worker-policy -f
 ```
 
 ## 10. Production benzeri test yaparken dikkat etmem gereken farklar neler?
 
-### Development ve Production ortam farkı
+### Development ve Production ortam farki
 
-Yerel geliştirmede birçok şey otomatik veya toleranslı çalışır. Production benzeri ortamda ise:
+Production benzeri ortamda:
 
-- exception detayları dışarı verilmez
-- portlar sabitlenir
-- servisler arka planda çalışır
-- config dosyasına değil environment variable’a güvenilir
-- reverse proxy devrededir
+- daha az detayli hata cevabi gorursun
+- portlar sabit olur
+- servisler terminal yerine systemd altinda kosar
+- config dosyalari yerine env file daha kritik hale gelir
+- Nginx araya girdigi icin request zinciri degisir
 
 ### Environment name
 
-API için:
+Web host'lar icin:
 
 ```bash
 ASPNETCORE_ENVIRONMENT=Production
 ```
 
-Worker’lar için:
+Worker'lar icin:
 
 ```bash
 DOTNET_ENVIRONMENT=Production
 ```
 
-Bu ayrımı yapmak iyi olur. Her ikisini de set etmek istersen sorun değil, ama asıl host tipine göre kullanmak daha temizdir.
+### Hata sayfalari / exception davranisi
 
-### Hata sayfaları / exception davranışı
-
-Bu API zaten `UseExceptionHandler()` kullanıyor. Yani production tarafında geliştirici hata sayfası beklememelisin. Hata alırsan:
+Hem identity API hem expense API `UseExceptionHandler()` kullaniyor. Yani development exception page beklememelisin. Hata analizinde sunlara bakarsin:
 
 - HTTP response
 - `journalctl`
 - Nginx error log
 
-üzerinden teşhis yaparsın.
+### Logging farklari
 
-### Logging farkları
-
-Development’te terminalde gördüğün loglar production benzeri kurulumda:
+Yerelde terminale bakan geliştirici ile production benzeri kurulumdaki bakis acisi farklidir. Burada asagidakiler senin ana gozlem araclarin olur:
 
 - `journalctl`
 - Nginx access/error log
-- RabbitMQ arayüzü
-
-üzerinden takip edilir.
+- Docker container loglari
+- RabbitMQ management UI
 
 ### Static files
 
-API içinde `UseStaticFiles()` yok. Zaten bu servis bir frontend host’u değil. Angular client’ı production benzeri testte Nginx ile ayrıca servis etmek istersen, o ayrı bir karardır.
+Expense API bir frontend host'u degildir. `UseStaticFiles()` yok. Angular client'i ayni Linux VM'de servis etmek istersen Nginx ile ayri statik yayin stratejisi kurman gerekir.
 
 ### CORS
 
-Eğer client ve API aynı origin üzerinden Nginx ile sunulursa CORS ihtiyacı azalır. Ama farklı portlardan çalıştırırsan CORS konusu gündeme gelir.
+API tarafinda belirgin bir CORS configurasyonu yok. Bu nedenle en temiz local production simülasyonu:
 
-Şu an API’de açık bir CORS konfigürasyonu görünmüyor. Bu yüzden production benzeri yaklaşımda client’ı da Nginx arkasından aynı origin’e almak daha az sorun çıkarır.
+- client'i de Nginx ile ayni origin altinda servis etmek
+
+veya
+
+- testleri Postman/curl ile yapmak
 
 ### Proxy headers
 
-Bu projede şu an kritik eksiklerden biri budur. Nginx arkasında doğru proxy header işlemek için uygulamaya forwarded headers desteği eklemek gerekir.
+Bu projede en onemli deployment eksiklerinden biri budur. `UseForwardedHeaders()` olmadigi icin ozellikle HTTPS ve gercek istemci IP'si gibi konularda dikkatli olman gerekir.
 
-Mevcut durumda:
+## 11. Bu projeyi local production simulasyonunda calistirirken hangi problemlerle karsilasabilirim?
 
-- `UseHttpsRedirection()` var
-- `UseForwardedHeaders()` yok
-
-Bu yüzden özellikle HTTPS senaryosunda dikkatli olmalısın.
-
-## 11. Bu projeyi local production simülasyonunda çalıştırırken hangi problemlerle karşılaşabilirim?
-
-### Port çakışması
+### Port cakismasi
 
 Belirti:
 
-- Nginx açılmaz
 - API bind edemez
-- Docker container başlayamaz
+- Nginx baslamaz
+- Docker container portu acar gibi yapip duser
 
 Kontrol:
 
 ```bash
 ss -tulpn | grep 5005
+ss -tulpn | grep 5006
 ss -tulpn | grep 80
 ss -tulpn | grep 5432
 ss -tulpn | grep 5672
 ```
 
-### İzin problemleri
+### Izin problemleri
 
 Belirti:
 
-- `systemd` servis başlar gibi yapar ama düşer
-- publish klasörüne erişemez
-- env dosyasını okuyamaz
+- systemd servis baslar gibi yapar ama kapanir
+- publish klasorune erisemez
+- env dosyasini okuyamaz
 
-Çözüm:
+Kontrol et:
 
-- `WorkingDirectory` doğru mu?
-- `ExecStart` doğru mu?
-- servis kullanıcısının klasör erişimi var mı?
+- `WorkingDirectory` dogru mu
+- `ExecStart` dogru mu
+- `www-data` veya sectigin kullanici dosyalari okuyabiliyor mu
 
 ### Nginx `502 Bad Gateway`
 
-Bu en sık görülen sorundur. Genelde şu anlama gelir:
+En sik hata senaryolarindan biridir. Genelde sunu anlatir:
 
-- Nginx arkadaki API’ye ulaşamıyor
-- API hiç başlamamış
-- yanlış porta proxy yapılıyor
+- Nginx arkadaki host'a ulasamiyor
+- host ayakta degil
+- yanlis porta proxy var
 
-Kontrol sırası:
+Kontrol sirasini soyle kur:
 
-1. API servisi ayakta mı?
-2. `curl http://127.0.0.1:5005/health/live` API host içinde dönüyor mu?
-3. Nginx config’te `proxy_pass` doğru mu?
-4. `journalctl -u sourceex-api -f` ne diyor?
+1. `curl http://127.0.0.1:5006/health/live`
+2. `curl http://127.0.0.1:5005/health/live`
+3. `sudo nginx -t`
+4. `journalctl -u sourceex-identity-api -f`
+5. `journalctl -u sourceex-api -f`
 
-### Yanlış publish
+### Yanlis publish
 
 Belirti:
 
-- `ExecStart` dosyayı bulamaz
-- yanlış runtime hedefi
-- eksik dosya
+- `ExecStart` dosyayi bulamaz
+- Linux'ta uyumsuz publish ciktilari
+- eksik runtime hedefi
 
-Özellikle Windows’tan publish alırken Linux runtime belirtmek iyi olur.
+Windows'tan publish aliyorsan `-r linux-x64` vermek daha güvenli olur.
 
 ### Eksik runtime
 
 Belirti:
 
-- `Failed to load the .NET runtime`
 - `It was not possible to find any compatible framework version`
+- .NET host baslamaz
 
 Kontrol:
 
@@ -745,22 +758,24 @@ Kontrol:
 dotnet --info
 ```
 
-### Yanlış environment variable
+### Yanlis environment variable
 
 Belirti:
 
 - DB connection string bulunamaz
-- JWT ayarları boş gelir
-- RabbitMQ host yanlış olur
+- JWT ayarlari eksik gelir
+- RabbitMQ host yanlis olur
+- identity seed davranisi bekledigin gibi calismaz
 
-Özellikle API için [AddInfrastructure](../src/SourceEx.Infrastructure/DependencyInjection.cs) bağlantı dizesi boşsa uygulamayı başlatmaz.
+Ozellikle iki API oldugu icin yanlis env dosyasini yanlis servise vermemeye dikkat et.
 
-### Database erişim problemi
+### Database erisim problemi
 
 Belirti:
 
-- `/health/ready` başarısız olur
-- API açılır ama veritabanı işlemleri patlar
+- `/health/ready` donmez
+- login calismaz
+- expense kaydi patlar
 
 Kontrol:
 
@@ -769,18 +784,14 @@ docker compose ps
 docker logs sourceex-postgres
 ```
 
-veya PostgreSQL erişimi:
+Gerekirse PostgreSQL'e girip hem `sourceex` hem `sourceex_identity` veritabanlarini kontrol et.
 
-```bash
-psql -h 127.0.0.1 -U postgres -d sourceex
-```
-
-### RabbitMQ erişim problemi
+### RabbitMQ erisim problemi
 
 Belirti:
 
-- worker’lar bağlanamaz
-- outbox publish çalışmaz
+- worker'lar baglanamaz
+- publish veya consume akisi bozulur
 
 Kontrol:
 
@@ -794,73 +805,87 @@ UI:
 http://<vm-ip>:15672
 ```
 
-### Ollama erişim problemi
+### Ollama erisim problemi
 
 Belirti:
 
-- policy worker log’da warning üretir
-- fallback rule ile devam eder
+- policy worker warning loglari yazar
+- AI analiz yerine fallback karar verir
 
-Bu projede güzel taraf şu: Ollama erişilemezse policy worker tamamen çökmez, deterministic fallback kullanır.
+Bu projede iyi taraf su: Ollama erisilemese bile policy worker tamamen cokmeyebilir.
 
-## 12. Bu proje için en mantıklı deployment akışı
+## 12. Bu proje icin en mantikli deployment akisini oner
 
-Bu repo’nun bugünkü haliyle benim önerdiğim en mantıklı yerel production simülasyonu akışı budur:
+Bu repo'nun bugunku durumuna gore en mantikli deployment akisi su olur:
 
-### Adım 1: Geliştirme makinesinde doğrula
-
-Önce:
+### Adim 1: Gelistirme makinesinde build kontrolu yap
 
 ```bash
 dotnet build SourceEx.slnx
 ```
 
-Ardından gerekli migration’ı oluştur ve DB’yi hazırla. Unutma: repo içinde migration yok.
+Not: Bu repo'da EF migration dosyalari yok. Hem identity hem expense veritabani tarafinda ilk olusum `EnsureCreated` ile bootstrap ediliyor. Bu, local production simulasyonu icin kabul edilebilir; ama gercek production'a gecmeden once migration stratejisi eklenmelidir.
 
-### Adım 2: Publish al
+### Adim 2: Tum host'lar icin publish al
 
-API ve üç worker için ayrı ayrı `dotnet publish` çalıştır.
+```bash
+dotnet publish src/SourceEx.Identity.API/SourceEx.Identity.API.csproj -c Release -r linux-x64 --self-contained false -o ./publish/identity-api
+dotnet publish src/SourceEx.API/SourceEx.API.csproj -c Release -r linux-x64 --self-contained false -o ./publish/api
+dotnet publish src/SourceEx.Worker.Notification/SourceEx.Worker.Notification.csproj -c Release -r linux-x64 --self-contained false -o ./publish/worker-notification
+dotnet publish src/SourceEx.Worker.Audit/SourceEx.Worker.Audit.csproj -c Release -r linux-x64 --self-contained false -o ./publish/worker-audit
+dotnet publish src/SourceEx.Worker.Policy/SourceEx.Worker.Policy.csproj -c Release -r linux-x64 --self-contained false -o ./publish/worker-policy
+```
 
-### Adım 3: Linux VM’de altyapıyı hazırla
+### Adim 3: Linux VM'de altyapiyi hazirla
 
-Linux içine:
+Kur:
 
-- .NET 10 runtime veya SDK
+- .NET 10 SDK veya gerekli runtime'lar
 - Nginx
-- Docker + Compose
+- Docker ve Docker Compose
 
-kur.
-
-### Adım 4: Infra container’larını başlat
-
-Repo’daki [docker-compose.yml](../docker-compose.yml) ile:
+### Adim 4: Infra container'larini ayaga kaldir
 
 ```bash
 docker compose up -d
 ```
 
-Bu sana:
+Bu asamada:
 
 - PostgreSQL
 - RabbitMQ
 - Ollama
 
-sağlar.
+ayaga kalkar.
 
-### Adım 5: Publish dosyalarını Linux’a kopyala
-
-Örneğin:
+### Adim 5: Publish ciktisini Linux'a kopyala
 
 ```bash
+scp -r ./publish/identity-api user@linux-vm:/opt/sourceex/identity-api/current
 scp -r ./publish/api user@linux-vm:/opt/sourceex/api/current
 scp -r ./publish/worker-notification user@linux-vm:/opt/sourceex/workers/notification/current
 scp -r ./publish/worker-audit user@linux-vm:/opt/sourceex/workers/audit/current
 scp -r ./publish/worker-policy user@linux-vm:/opt/sourceex/workers/policy/current
 ```
 
-### Adım 6: Environment file’ları oluştur
+### Adim 6: Environment file'lari olustur
 
-Örnek API env dosyası:
+Identity API icin:
+
+```dotenv
+ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_URLS=http://127.0.0.1:5006
+ConnectionStrings__Database=Host=127.0.0.1;Port=5432;Database=sourceex_identity;Username=postgres;Password=postgres
+Jwt__Issuer=SourceEx.Local
+Jwt__Audience=SourceEx.Client
+Jwt__SigningKey=change-this-in-your-linux-vm-to-a-strong-secret-key
+Jwt__AccessTokenLifetimeMinutes=120
+Jwt__RefreshTokenLifetimeDays=7
+IdentitySeed__Enabled=true
+IdentitySeed__DemoPassword=Passw0rd!
+```
+
+Expense API icin:
 
 ```dotenv
 ASPNETCORE_ENVIRONMENT=Production
@@ -877,7 +902,7 @@ Jwt__SigningKey=change-this-in-your-linux-vm-to-a-strong-secret-key
 Jwt__AccessTokenLifetimeMinutes=120
 ```
 
-Policy worker env örneği:
+Policy worker icin:
 
 ```dotenv
 DOTNET_ENVIRONMENT=Production
@@ -892,86 +917,82 @@ Ollama__Model=gemma3
 Ollama__TimeoutSeconds=60
 ```
 
-### Adım 7: systemd servislerini tanımla
-
-API ve worker servislerini `/etc/systemd/system` altında oluştur.
-
-### Adım 8: Servisleri ayağa kaldır
+### Adim 7: systemd servislerini yaz ve etkinlestir
 
 ```bash
 sudo systemctl daemon-reload
+sudo systemctl enable --now sourceex-identity-api
 sudo systemctl enable --now sourceex-api
 sudo systemctl enable --now sourceex-worker-notification
 sudo systemctl enable --now sourceex-worker-audit
 sudo systemctl enable --now sourceex-worker-policy
 ```
 
-### Adım 9: Nginx’i bağla
+### Adim 8: Nginx'i bagla
 
-Nginx config ile `127.0.0.1:5005` üzerindeki API’ye proxy ver.
+Nginx config'inde:
 
-### Adım 10: Test et
+- `/api/v1.0/identity/` -> `127.0.0.1:5006`
+- diger API path'leri -> `127.0.0.1:5005`
 
-Sırayla:
+olarak yonlendirme yap.
+
+### Adim 9: Test et
+
+Sirayla su testi yap:
 
 ```bash
+curl http://127.0.0.1:5006/health/live
 curl http://127.0.0.1:5005/health/live
-curl http://127.0.0.1:5005/health/ready
-curl http://<vm-ip>/health/live
-curl http://<vm-ip>/api/v1.0/auth/token
+curl -X POST http://<vm-ip>/api/v1.0/identity/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"userNameOrEmail":"manager-001","password":"Passw0rd!"}'
 ```
 
-Sonra expense oluşturma ve approve akışını çalıştır.
+Sonra donen access token ile expense endpoint'lerini cagir.
 
-### Adım 11: Log kontrol et
+### Adim 10: Loglari kontrol et
 
 ```bash
+journalctl -u sourceex-identity-api -f
 journalctl -u sourceex-api -f
-journalctl -u sourceex-worker-policy -f
-journalctl -u sourceex-worker-audit -f
 journalctl -u sourceex-worker-notification -f
-```
-
-Gerektiğinde:
-
-```bash
+journalctl -u sourceex-worker-audit -f
+journalctl -u sourceex-worker-policy -f
 sudo nginx -t
-sudo systemctl status nginx
-sudo systemctl status sourceex-api
 docker compose ps
 ```
 
-## Bu proje şu an production deployment için tamamen hazır mı?
+## Bu proje su an production deployment icin tamamen hazir mi?
 
-Hayır, tam anlamıyla değil. Ama yerel production simülasyonu için yeterince iyi bir temel sunuyor.
+Hayir. Local production simulasyonu icin iyi bir temel var ama gercek production seviyesinde eksikler de var.
 
-Eksik veya geliştirilmesi gereken noktalar:
+Eksik veya gelistirilmeye acik alanlar:
 
-- `appsettings.Production.json` dosyaları yok
-- EF migration’lar commit edilmemiş
-- reverse proxy için forwarded headers desteği yok
-- kalıcı dosya/sink tabanlı logging yok
-- worker health endpoint veya watchdog mekanizması yok
-- secrets yönetimi şu an basit düzeyde
+- `appsettings.Production.json` dosyalari yok
+- EF migration dosyalari yok
+- `UseForwardedHeaders()` yok
+- merkezi loglama yok
+- secrets yonetimi basit duzeyde
+- identity tarafi icin gelismis hesap guvenligi ozellikleri yok
+- worker saglik izleme mekanizmasi henuz temel seviyede
 
-Buna rağmen local Linux + Nginx + systemd + Docker altyapısı ile oldukça gerçekçi bir dağıtım provası yapılabilir.
+Ama tum bunlara ragmen bu repo, Linux VM + Nginx + systemd + Docker Compose ile production'a yakin bir prova yapmak icin yeterli bir taban sunuyor.
 
-## Son öneri
+## Son onerim
 
-Bu proje için en mantıklı ilk production benzeri kurulum modeli şudur:
+Bu proje icin en mantikli ilk local production simulasyonu modeli su olsun:
 
-- **Nginx host üzerinde**
-- **API ve worker’lar host üzerinde systemd ile**
-- **PostgreSQL, RabbitMQ ve Ollama Docker Compose ile**
-- **Config değerleri environment file ile**
+- Nginx host uzerinde
+- `SourceEx.Identity.API` ve `SourceEx.API` host uzerinde systemd ile
+- worker'lar host uzerinde systemd ile
+- PostgreSQL, RabbitMQ ve Ollama Docker Compose ile
+- tum hassas ayarlar environment file ile
 
-Bu model hem anlaşılırdır hem de seni gerçek production yaklaşımına yaklaştırır. Daha sonra istersen ikinci aşamada:
+Bu modeli oturttuktan sonra ikinci asamada su iyilestirmelere gecebilirsin:
 
-- Dockerfile
-- CI/CD publish pipeline
-- HTTPS
-- Serilog/Seq
-- OpenTelemetry
-- forwarded headers düzeltmesi
-
-gibi production hazırlıklarını ekleyebilirsin.
+- `UseForwardedHeaders()` eklemek
+- HTTPS'i yerlestirmek
+- EF migration stratejisi getirmek
+- Serilog/Seq veya OpenTelemetry eklemek
+- CI/CD publish pipeline yazmak

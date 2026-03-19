@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using BuildingBlocks.Security;
 
 namespace SourceEx.API.Security;
 
