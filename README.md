@@ -103,14 +103,23 @@ The approve endpoint additionally requires one of these roles:
 
 Implemented and planned work is tracked in [ROADMAP.md](docs/ROADMAP.md).
 
+## Architecture
+
+Architecture-focused documentation is available in:
+
+- [Architecture Guide (English)](docs/architecture-en.md)
+- [Architecture Guide (Turkish)](docs/architecture-tr.md)
+- [Roadmap](docs/ROADMAP.md)
+
 ## Documentation
 
 Project documentation is available in:
 
+- [Architecture Guide (English)](docs/architecture-en.md)
+- [Architecture Guide (Turkish)](docs/architecture-tr.md)
 - [Project Documentation](docs/PROJECT_DOCUMENTATION.md)
 - [Testing Guide](docs/TESTING_GUIDE.md)
 - [Linux Local Production Guide](docs/linux-local-production-tr.md)
-- [Architecture Guide in Turkish](docs/architecture-tr.md)
 
 ## Client
 

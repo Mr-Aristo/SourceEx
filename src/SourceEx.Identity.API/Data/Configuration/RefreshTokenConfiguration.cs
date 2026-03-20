@@ -28,10 +28,13 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
         builder.HasIndex(refreshToken => refreshToken.TokenHash)
             .IsUnique();
 
+        builder.HasIndex(refreshToken => refreshToken.ExpiresAtUtc);
+
+        builder.HasIndex(refreshToken => refreshToken.RevokedAtUtc);
+
         builder.HasOne(refreshToken => refreshToken.User)
             .WithMany(user => user.RefreshTokens)
             .HasForeignKey(refreshToken => refreshToken.UserId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
-

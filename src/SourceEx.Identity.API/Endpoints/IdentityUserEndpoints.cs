@@ -132,8 +132,12 @@ public static class IdentityUserEndpoints
 
         if (string.IsNullOrWhiteSpace(request.Password))
             errors["password"] = ["Password is required."];
-        else if (request.Password.Length < 8)
-            errors["password"] = ["Password must be at least 8 characters long."];
+        else
+        {
+            var passwordErrors = PasswordPolicy.Validate(request.Password);
+            if (passwordErrors.Length > 0)
+                errors["password"] = passwordErrors;
+        }
 
         if (string.IsNullOrWhiteSpace(request.DisplayName))
             errors["displayName"] = ["DisplayName is required."];
@@ -155,4 +159,3 @@ public static class IdentityUserEndpoints
             statusCode: StatusCodes.Status409Conflict);
     }
 }
-

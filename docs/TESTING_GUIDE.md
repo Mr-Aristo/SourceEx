@@ -4,10 +4,11 @@
 
 This document explains how to test the SourceEx solution end to end, what infrastructure is required, what commands should be run, and what outcomes are expected at each step.
 
-The current repository contains the application code and local infrastructure definitions, but it does not yet contain automated test projects or committed Entity Framework migrations. Because of that, the most reliable way to validate the system today is:
+The current repository already includes committed initial EF Core migrations and a first automated unit-test baseline. Because of that, the most reliable way to validate the system today is:
 
+- solution build and unit-test execution
 - local infrastructure startup
-- automatic schema bootstrap through `EnsureCreated`
+- automatic schema application through `MigrateAsync()`
 - API and worker startup
 - identity service startup
 - manual and API-driven smoke testing
@@ -77,12 +78,12 @@ docker exec -it sourceex-ollama ollama pull gemma3
 
 ## Database Preparation
 
-The current codebase does not include committed EF Core migrations yet. Instead, both the expense API and the identity service bootstrap their local schema with `EnsureCreated()` during startup.
+The current codebase includes committed initial EF Core migrations for both the expense and identity stores. Both hosts apply those migrations during startup through `Database.MigrateAsync()`.
 
 What this means in practice:
 
-- for local validation, you can start the services without generating migrations first
-- for long-term production readiness, proper migrations should still be added later
+- for local validation, you can start the services without generating migrations manually first
+- for long-term production readiness, migration rollout discipline should still be improved beyond this initial baseline
 - if PostgreSQL data volumes already existed before the identity module was introduced, recreate the database volume or create `sourceex_identity` manually
 
 ## Build Validation
@@ -94,6 +95,14 @@ dotnet build SourceEx.slnx
 ```
 
 This validates package restore, project references, and compile-time wiring.
+
+Run the current unit-test baseline as well:
+
+```bash
+dotnet test SourceEx.slnx
+```
+
+At the current repository state, this covers initial domain and application tests. It does not replace the runtime smoke tests below.
 
 ## Starting the Services
 
@@ -402,7 +411,7 @@ docker start sourceex-ollama
 
 ## Recommended Automated Test Strategy
 
-The repository should eventually include the following automated test layers:
+The repository should eventually expand to include the following automated test layers:
 
 - Domain unit tests
   - aggregate behavior
@@ -428,8 +437,7 @@ The repository should eventually include the following automated test layers:
 
 At the current state, keep these limitations in mind while testing:
 
-- no committed EF Core migrations yet
-- no automated test project yet
+- automated tests exist, but coverage is still narrow
 - no inbox/idempotency persistence yet
 - no production-grade distributed tracing yet
 

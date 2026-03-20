@@ -46,6 +46,10 @@ public sealed class ApplicationUserConfiguration : IEntityTypeConfiguration<Appl
         builder.Property(user => user.IsActive)
             .IsRequired();
 
+        builder.Property(user => user.AccessFailedCount)
+            .HasDefaultValue(0)
+            .IsRequired();
+
         builder.HasIndex(user => user.NormalizedUserName)
             .IsUnique();
 
@@ -53,4 +57,3 @@ public sealed class ApplicationUserConfiguration : IEntityTypeConfiguration<Appl
             .IsUnique();
     }
 }
-

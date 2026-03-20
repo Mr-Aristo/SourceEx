@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using SourceEx.Identity.API.Contracts;
 using SourceEx.Identity.API.Data.Context;
 using SourceEx.Identity.API.Entities;
+using SourceEx.Identity.API.RateLimiting;
 using SourceEx.Identity.API.Security;
 
 namespace SourceEx.Identity.API.Endpoints;
@@ -30,6 +31,7 @@ public static class IdentityAuthEndpoints
 
         group.MapPost("/register", RegisterAsync)
             .MapToApiVersion(new ApiVersion(1, 0))
+            .RequireRateLimiting(IdentityRateLimiter.RegistrationPolicy)
             .WithName("RegisterIdentityUser")
             .WithSummary("Registers a self-service employee account.")
             .WithDescription("Creates a new employee account with a hashed password and returns access and refresh tokens.")
@@ -40,6 +42,7 @@ public static class IdentityAuthEndpoints
 
         group.MapPost("/login", LoginAsync)
             .MapToApiVersion(new ApiVersion(1, 0))
+            .RequireRateLimiting(IdentityRateLimiter.LoginPolicy)
             .WithName("LoginIdentityUser")
             .WithSummary("Authenticates a user with username or email and password.")
             .WithDescription("Returns a signed JWT access token, a refresh token, and the authenticated identity profile.")
@@ -50,6 +53,7 @@ public static class IdentityAuthEndpoints
 
         group.MapPost("/refresh", RefreshAsync)
             .MapToApiVersion(new ApiVersion(1, 0))
+            .RequireRateLimiting(IdentityRateLimiter.RefreshPolicy)
             .WithName("RefreshIdentityToken")
             .WithSummary("Rotates an access token by using a refresh token.")
             .WithDescription("Revokes the previous refresh token, issues a new access token, and returns a new refresh token pair.")
@@ -161,11 +165,33 @@ public static class IdentityAuthEndpoints
         if (user is null || !user.IsActive)
             return TypedResults.Unauthorized();
 
+        var now = DateTime.UtcNow;
+        if (user.LockoutEndUtc is DateTime lockoutEndUtc && lockoutEndUtc > now)
+            return CreateLockoutResult(lockoutEndUtc);
+
         var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
         if (verificationResult == PasswordVerificationResult.Failed)
-            return TypedResults.Unauthorized();
+        {
+            user.AccessFailedCount++;
 
-        user.LastLoginAtUtc = DateTime.UtcNow;
+            if (user.AccessFailedCount >= IdentityHardeningDefaults.MaxFailedAccessAttempts)
+            {
+                user.AccessFailedCount = 0;
+                user.LockoutEndUtc = now.Add(IdentityHardeningDefaults.LockoutDuration);
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            return user.LockoutEndUtc is DateTime activeLockoutEndUtc && activeLockoutEndUtc > now
+                ? CreateLockoutResult(activeLockoutEndUtc)
+                : TypedResults.Unauthorized();
+        }
+
+        user.LastLoginAtUtc = now;
+        user.AccessFailedCount = 0;
+        user.LockoutEndUtc = null;
+
+        await DeleteStaleRefreshTokensAsync(dbContext, user.Id, cancellationToken);
 
         var roles = user.UserRoles.Select(userRole => userRole.Role.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var tokenResult = CreateTokenResponse(user, roles, tokenIssuer, refreshTokenService);
@@ -205,6 +231,9 @@ public static class IdentityAuthEndpoints
             return TypedResults.Unauthorized();
         }
 
+        if (storedRefreshToken.User.LockoutEndUtc is DateTime lockoutEndUtc && lockoutEndUtc > DateTime.UtcNow)
+            return CreateLockoutResult(lockoutEndUtc);
+
         var roles = storedRefreshToken.User.UserRoles
             .Select(userRole => userRole.Role.Name)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -214,6 +243,7 @@ public static class IdentityAuthEndpoints
         storedRefreshToken.RevokedAtUtc = DateTime.UtcNow;
         storedRefreshToken.ReplacedByTokenHash = tokenResult.RefreshTokenEntity.TokenHash;
 
+        await DeleteStaleRefreshTokensAsync(dbContext, storedRefreshToken.User.Id, cancellationToken);
         dbContext.RefreshTokens.Add(tokenResult.RefreshTokenEntity);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -281,8 +311,12 @@ public static class IdentityAuthEndpoints
 
         if (string.IsNullOrWhiteSpace(request.Password))
             errors["password"] = ["Password is required."];
-        else if (request.Password.Length < 8)
-            errors["password"] = ["Password must be at least 8 characters long."];
+        else
+        {
+            var passwordErrors = PasswordPolicy.Validate(request.Password);
+            if (passwordErrors.Length > 0)
+                errors["password"] = passwordErrors;
+        }
 
         if (string.IsNullOrWhiteSpace(request.DisplayName))
             errors["displayName"] = ["DisplayName is required."];
@@ -312,6 +346,14 @@ public static class IdentityAuthEndpoints
             title: "The identity request could not be completed.",
             detail: detail,
             statusCode: StatusCodes.Status409Conflict);
+    }
+
+    private static IResult CreateLockoutResult(DateTime lockoutEndUtc)
+    {
+        return Results.Problem(
+            title: "The account is temporarily locked.",
+            detail: $"Too many failed login attempts were detected. Please retry after {lockoutEndUtc:O}.",
+            statusCode: StatusCodes.Status429TooManyRequests);
     }
 
     private static IdentityUserResponse MapUserResponse(ApplicationUser user)
@@ -352,5 +394,18 @@ public static class IdentityAuthEndpoints
                     roles.ToArray())),
             refreshTokenEntity);
     }
-}
 
+    private static async Task DeleteStaleRefreshTokensAsync(
+        IdentityDbContext dbContext,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+
+        await dbContext.RefreshTokens
+            .Where(token =>
+                token.UserId == userId &&
+                (token.ExpiresAtUtc <= now || token.RevokedAtUtc != null))
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+}

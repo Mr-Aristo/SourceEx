@@ -18,10 +18,12 @@ public sealed class ExpenseCreatedIntegrationEventConsumer : IConsumer<ExpenseCr
     public Task Consume(ConsumeContext<ExpenseCreatedIntegrationEvent> context)
     {
         _logger.LogInformation(
-            "Audit worker recorded expense creation. ExpenseId: {ExpenseId}, EmployeeId: {EmployeeId}, DepartmentId: {DepartmentId}.",
+            "Audit worker recorded expense creation. ExpenseId: {ExpenseId}, EmployeeId: {EmployeeId}, DepartmentId: {DepartmentId}, MessageId: {MessageId}, CorrelationId: {CorrelationId}.",
             context.Message.ExpenseId,
             context.Message.EmployeeId,
-            context.Message.DepartmentId);
+            context.Message.DepartmentId,
+            context.MessageId,
+            context.CorrelationId);
 
         return Task.CompletedTask;
     }

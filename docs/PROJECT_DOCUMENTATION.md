@@ -1,5 +1,7 @@
 # SourceEx Project Documentation
 
+This document is the general English project guide. For the architecture-focused walkthrough, see [architecture-en.md](architecture-en.md).
+
 ## Overview
 
 SourceEx is a modular .NET solution designed around:
@@ -121,6 +123,8 @@ Main responsibilities:
 - local bootstrap users for development
 
 The expense API does not own usernames, passwords, or refresh tokens anymore. It only validates JWTs that were issued by this module.
+
+This identity service is intentionally pragmatic in its current form. It already gives the solution a separate identity boundary, but it does not yet mirror the same `Domain / Application / Infrastructure` layering used by the expense module.
 
 ### SourceEx.Worker.Notification
 
@@ -249,6 +253,19 @@ Current login capabilities:
 - refresh token rotation
 - local seeded worker, manager, finance, and admin users
 
+Already implemented as minimum hardening:
+
+- login, registration, and refresh token rate limiting
+- account lockout after repeated failed attempts
+- stronger password policy enforcement
+- refresh token cleanup strategy
+
+Still missing from the current implementation:
+
+- deeper brute-force telemetry
+- richer security auditing
+- MFA and advanced account protection workflows
+
 This can later be replaced or extended with Keycloak or another external identity provider, but the current structure already separates identity concerns from the expense domain.
 
 ## Validation Model
@@ -296,6 +313,14 @@ Stored data includes:
 - identity users
 - identity roles
 - identity refresh tokens
+
+Current schema management now has an initial migration baseline:
+
+- the repository contains committed EF Core migrations for both contexts
+- the expense database is updated through `Database.MigrateAsync()` during startup
+- the identity database is updated through `Database.MigrateAsync()` inside the identity startup flow
+
+This is a meaningful improvement, but migration governance is still basic. Release sequencing, rollback discipline, and environment-specific rollout practices are still future work.
 
 The current design intentionally keeps write-side persistence simple. Future evolution may include:
 
@@ -364,19 +389,42 @@ The readiness endpoint currently checks database connectivity.
 
 Workers and API currently rely on standard .NET logging.
 
+Baseline observability that already exists:
+
+- correlation ID middleware in both API hosts
+- correlation IDs added to `ProblemDetails`
+- activity tracking in host logging
+- worker and outbox logs include message/correlation identifiers
+
 This is enough for local development, but the recommended next step is to add:
 
 - structured logging
 - centralized log storage
 - OpenTelemetry tracing and metrics
 
+### Reverse Proxy Readiness
+
+The repository includes deployment guidance that assumes Nginx or another reverse proxy, and the host applications now include a baseline reverse proxy integration.
+
+Current reality:
+
+- both hosts use `UseHttpsRedirection()`
+- both hosts use `UseForwardedHeaders()`
+
+This should be treated as a baseline rather than a finished hardening story. Trusted proxy/network rules and environment-specific forwarding policies still need review.
+
 ## Current Known Limitations
 
 The current implementation is intentionally pragmatic and still has open areas for hardening:
 
-- no committed EF migrations yet
-- no automated test project yet
+- migration strategy exists but is still at an early governance level
+- automated test projects now exist for domain and application baselines
+- test coverage is still narrow
 - no inbox/idempotency persistence yet
+- reverse proxy support is baseline-only, not fully hardened
+- identity hardening exists at a minimum viable level, but deeper protection is still missing
+- no structured observability stack yet
+- identity module does not yet mirror the same internal layering as the expense module
 - no distributed tracing yet
 - no dedicated read-model store yet
 - no production identity provider integration yet
@@ -385,16 +433,21 @@ The current implementation is intentionally pragmatic and still has open areas f
 
 Recommended next improvements:
 
-- add EF migrations to source control
-- add unit and integration tests
-- add Testcontainers-based infrastructure tests
+- mature migration rollout practices beyond the initial baseline
+- expand domain and application tests, then add infrastructure and API coverage
+- harden reverse proxy trust settings for production-like deployments
+- continue hardening the identity module
+- add Testcontainers-based infrastructure tests after the basic test baseline exists
 - add inbox/idempotency persistence
-- consider MassTransit transactional outbox integration
-- add OpenTelemetry
+- consider MassTransit transactional outbox integration after migrations and tests stabilize
+- add structured logging and OpenTelemetry
+- evaluate whether the identity module should evolve toward its own `Application / Infrastructure` split
 - introduce dedicated read models
 - evaluate Marten when event sourcing or advanced projections become necessary
 
 ## Related Documents
 
+- [Architecture Guide (English)](architecture-en.md)
+- [Architecture Guide (Turkish)](architecture-tr.md)
 - [Testing Guide](TESTING_GUIDE.md)
 - [Roadmap](ROADMAP.md)

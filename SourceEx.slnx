@@ -12,4 +12,8 @@
     <Project Path="src/SourceEx.Worker.Notification/SourceEx.Worker.Notification.csproj" />
     <Project Path="src/SourceEx.Worker.Policy/SourceEx.Worker.Policy.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SourceEx.Application.Tests/SourceEx.Application.Tests.csproj" />
+    <Project Path="tests/SourceEx.Domain.Tests/SourceEx.Domain.Tests.csproj" />
+  </Folder>
 </Solution>

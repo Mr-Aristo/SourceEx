@@ -1,8 +1,10 @@
 using Asp.Versioning;
 using BuildingBlocks.Messaging;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using SourceEx.API.Endpoints;
 using SourceEx.API.ExceptionHandling;
+using SourceEx.API.Observability;
 using SourceEx.API.RateLimiting;
 using SourceEx.API.Security;
 using SourceEx.Application;
@@ -10,6 +12,14 @@ using SourceEx.Infrastructure.Bootstrap;
 using SourceEx.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.Configure(options =>
+{
+    options.ActivityTrackingOptions =
+        ActivityTrackingOptions.TraceId |
+        ActivityTrackingOptions.SpanId |
+        ActivityTrackingOptions.ParentId;
+});
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -27,6 +37,17 @@ builder.Services.AddApiVersioning(options =>
         new HeaderApiVersionReader("x-api-version"));
 });
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedProto |
+        ForwardedHeaders.XForwardedHost;
+
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 builder.Services.AddRateLimiter(ApiRateLimiter.Configure);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -36,7 +57,9 @@ var app = builder.Build();
 
 await app.Services.EnsureSourceExInfrastructureAsync();
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseHttpsRedirection();
 app.UseHttpLogging();
 app.UseAuthentication();
