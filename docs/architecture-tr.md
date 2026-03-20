@@ -51,13 +51,15 @@ Burada bir ikinci dürüstlük notu daha önemli: bu dokümanda "hedeflenen mima
 - proxy-aware host temelini kuran `UseForwardedHeaders()` desteği
 - domain ve application tarafında başlangıç seviyesinde unit test projeleri
 - correlation ID ve message/correlation loglaması ile basic observability foundation
+- Serilog tabanlı structured logging
+- Prometheus metrics endpoint’leri ve local Grafana/Prometheus baseline’ı
 
 Henüz tam olmayan veya future work olarak görülmesi gerekenler ise şunlar:
 
 - daha kapsamlı migration governance ve release disiplini
 - ileri seviye proxy / network hardening
 - daha kapsamlı integration test coverage
-- gelişmiş observability
+- distributed tracing ve merkezi log arama dahil daha gelişmiş observability
 - inbox / idempotency
 - identity modülünün ana çözümdeki katmanlı mimariyle tam hizalanması
 
@@ -567,11 +569,13 @@ Tüm uygulama [Program.cs](../src/SourceEx.API/Program.cs) üzerinden ayağa kal
 
 - ProblemDetails
 - exception handler
-- HTTP logging
+- structured logging
+- request logging
 - OpenAPI
 - JWT auth
 - API versioning
 - rate limiting
+- Prometheus metrics endpoint
 - application ve infrastructure servisleri
 - message broker
 
@@ -926,7 +930,7 @@ Bu örnek, bu projede veri akışının sadece request-response olmadığını; 
 Başlatma sırasında şunlar oluyor:
 
 1. ProblemDetails ve global exception handler ekleniyor
-2. HTTP logging ekleniyor
+2. structured logging ekleniyor
 3. OpenAPI ekleniyor
 4. JWT auth ve authorization policy’leri ekleniyor
 5. API versioning konfigüre ediliyor
@@ -934,12 +938,14 @@ Başlatma sırasında şunlar oluyor:
 7. Application katmanı servisleri ekleniyor
 8. Infrastructure katmanı servisleri ekleniyor
 9. Message broker ekleniyor
+10. Prometheus metrics endpoint’i hazırlanıyor
 
 Sonra middleware pipeline kuruluyor:
 
 - `UseExceptionHandler()`
+- `UseSerilogRequestLogging()`
 - `UseHttpsRedirection()`
-- `UseHttpLogging()`
+- `UseHttpMetrics()`
 - `UseAuthentication()`
 - `UseAuthorization()`
 - `UseRateLimiter()`
@@ -1040,23 +1046,28 @@ Global exception handling API’de merkezi olarak çözülmüş. Bu iyi çünkü
 
 ### Logging nasıl?
 
-Şu an logging temel host logging ve consumer logger’ları ile yapılıyor. API’de ayrıca `AddHttpLogging()` var. Bunun üstüne başlangıç seviyesinde observability desteği de eklenmiş:
+Şu an logging tarafı önceki düz console log seviyesinden bir adım ileri taşınmış durumda. Tüm API ve worker host’larında Serilog tabanlı structured JSON logging var. API host’larında ayrıca request logging kullanılıyor. Bunun üstüne observability temelinde şu parçalar da eklenmiş:
 
+- structured JSON log üretimi
+- iki API host’unda request logging
 - iki API host’unda correlation ID middleware var
 - `ProblemDetails` cevaplarına correlation ID ekleniyor
 - host logging tarafında activity tracking açık
 - outbox publish logları `MessageId` ve `CorrelationId` taşıyor
 - worker consumer logları message/correlation kimliklerini yazıyor
+- iki API host’unda `/metrics` endpoint’i var
+- local compose içinde Prometheus ve Grafana desteği var
+- outbox ve identity auth akışları için custom Prometheus metrikleri var
 
 Ama dürüst olmak gerekirse gelişmiş observability henüz yok:
 
-- Serilog yok
-- Seq yok
+- merkezi log arama yok
 - OpenTelemetry yok
 - distributed tracing yok
-- merkezi dashboard / metric katmanı yok
+- worker’lar için ayrı metrics endpoint yok
+- altyapı servisleri için daha geniş dashboard seti yok
 
-Bu yüzden sistem izlenebilirliği artık "tamamen temel" değil, ama hâlâ başlangıç seviyesinde.
+Bu yüzden sistem izlenebilirliği artık sadece temel loglardan ibaret değil; ama hâlâ minimum viable observability seviyesinde.
 
 ### Transaction yönetimi nasıl?
 

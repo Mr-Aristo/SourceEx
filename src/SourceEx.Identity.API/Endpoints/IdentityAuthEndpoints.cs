@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using SourceEx.Identity.API.Contracts;
 using SourceEx.Identity.API.Data.Context;
 using SourceEx.Identity.API.Entities;
+using SourceEx.Identity.API.Observability;
 using SourceEx.Identity.API.RateLimiting;
 using SourceEx.Identity.API.Security;
 
@@ -134,6 +135,7 @@ public static class IdentityAuthEndpoints
         dbContext.RefreshTokens.Add(tokenResult.RefreshTokenEntity);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        IdentityMetrics.RegistrationCount.Inc();
 
         return TypedResults.Created(
             $"/api/v1.0/identity/users/{user.Id}",
@@ -163,15 +165,22 @@ public static class IdentityAuthEndpoints
                 cancellationToken);
 
         if (user is null || !user.IsActive)
+        {
+            IdentityMetrics.LoginAttempts.WithLabels("failure").Inc();
             return TypedResults.Unauthorized();
+        }
 
         var now = DateTime.UtcNow;
         if (user.LockoutEndUtc is DateTime lockoutEndUtc && lockoutEndUtc > now)
+        {
+            IdentityMetrics.LoginAttempts.WithLabels("lockout").Inc();
             return CreateLockoutResult(lockoutEndUtc);
+        }
 
         var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
         if (verificationResult == PasswordVerificationResult.Failed)
         {
+            IdentityMetrics.LoginAttempts.WithLabels("failure").Inc();
             user.AccessFailedCount++;
 
             if (user.AccessFailedCount >= IdentityHardeningDefaults.MaxFailedAccessAttempts)
@@ -182,9 +191,13 @@ public static class IdentityAuthEndpoints
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            return user.LockoutEndUtc is DateTime activeLockoutEndUtc && activeLockoutEndUtc > now
-                ? CreateLockoutResult(activeLockoutEndUtc)
-                : TypedResults.Unauthorized();
+            if (user.LockoutEndUtc is DateTime activeLockoutEndUtc && activeLockoutEndUtc > now)
+            {
+                IdentityMetrics.LoginAttempts.WithLabels("lockout").Inc();
+                return CreateLockoutResult(activeLockoutEndUtc);
+            }
+
+            return TypedResults.Unauthorized();
         }
 
         user.LastLoginAtUtc = now;
@@ -198,6 +211,7 @@ public static class IdentityAuthEndpoints
 
         dbContext.RefreshTokens.Add(tokenResult.RefreshTokenEntity);
         await dbContext.SaveChangesAsync(cancellationToken);
+        IdentityMetrics.LoginAttempts.WithLabels("success").Inc();
 
         return TypedResults.Ok(tokenResult.Response);
     }
@@ -210,10 +224,13 @@ public static class IdentityAuthEndpoints
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            IdentityMetrics.RefreshRequests.WithLabels("failure").Inc();
             return TypedResults.ValidationProblem(new Dictionary<string, string[]>
             {
                 ["refreshToken"] = ["RefreshToken is required."]
             });
+        }
 
         var tokenHash = RefreshTokenService.ComputeHash(request.RefreshToken.Trim());
 
@@ -228,11 +245,15 @@ public static class IdentityAuthEndpoints
             storedRefreshToken.ExpiresAtUtc <= DateTime.UtcNow ||
             !storedRefreshToken.User.IsActive)
         {
+            IdentityMetrics.RefreshRequests.WithLabels("failure").Inc();
             return TypedResults.Unauthorized();
         }
 
         if (storedRefreshToken.User.LockoutEndUtc is DateTime lockoutEndUtc && lockoutEndUtc > DateTime.UtcNow)
+        {
+            IdentityMetrics.RefreshRequests.WithLabels("lockout").Inc();
             return CreateLockoutResult(lockoutEndUtc);
+        }
 
         var roles = storedRefreshToken.User.UserRoles
             .Select(userRole => userRole.Role.Name)
@@ -246,6 +267,7 @@ public static class IdentityAuthEndpoints
         await DeleteStaleRefreshTokensAsync(dbContext, storedRefreshToken.User.Id, cancellationToken);
         dbContext.RefreshTokens.Add(tokenResult.RefreshTokenEntity);
         await dbContext.SaveChangesAsync(cancellationToken);
+        IdentityMetrics.RefreshRequests.WithLabels("success").Inc();
 
         return TypedResults.Ok(tokenResult.Response);
     }

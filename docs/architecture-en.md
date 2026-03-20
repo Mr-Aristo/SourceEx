@@ -48,6 +48,8 @@ Already implemented:
 - reverse proxy baseline through forwarded header handling
 - initial domain and application test projects
 - basic observability foundation with correlation IDs and broker message correlation
+- structured Serilog logging across API and worker hosts
+- Prometheus metrics endpoints and local Grafana/Prometheus baseline
 
 Not fully implemented yet:
 
@@ -55,7 +57,7 @@ Not fully implemented yet:
 - broader migration rollout governance
 - hardened reverse proxy configuration for trusted networks and HTTPS termination
 - broader automated test coverage beyond the initial unit-test baseline
-- structured observability stack
+- full observability stack with tracing and centralized log search
 - a fully layered identity module matching the rest of the solution
 
 So the project is architecturally serious, but still intentionally pragmatic in a few places.
@@ -343,22 +345,27 @@ Because of that, the next testing step is expansion rather than creation from sc
 
 ### Observability
 
-The codebase currently relies on standard .NET logging plus HTTP logging in the API hosts, but it is no longer completely unstructured.
+The codebase now has a true minimum observability baseline rather than just ad-hoc host logs.
 
 Already present:
 
+- structured Serilog JSON logging in API and worker hosts
+- request logging in both API hosts
 - correlation ID middleware in both API hosts
 - correlation IDs added to `ProblemDetails`
 - activity tracking configuration in the host logging pipeline
 - broker message and correlation identifiers included in worker and outbox logs
+- Prometheus metrics endpoints in both API hosts
+- custom application metrics for outbox and identity flows
+- local Prometheus and Grafana support with provisioned dashboards
 
 What is still missing:
 
-- structured logging conventions
 - centralized log storage
 - distributed tracing
 - OpenTelemetry
-- richer worker execution dashboards and metrics
+- direct worker metrics endpoints
+- richer infrastructure dashboards and metrics
 
 For an event-driven system, this gap is worth calling out explicitly.
 
@@ -380,7 +387,7 @@ Where the project is still intentionally incomplete:
 - identity hardening is partial
 - the identity module is not yet layered like the expense module
 - automated tests exist, but coverage is still narrow
-- observability is still basic
+- observability is present at a useful baseline, but not yet full-spectrum
 - inbox/idempotency is missing
 
 This is not a contradiction. It simply means the project is a strong architectural base that still has a visible hardening backlog.
