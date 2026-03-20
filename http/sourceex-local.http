@@ -1,0 +1,82 @@
+@identityBaseUrl = http://localhost:5001
+@expenseBaseUrl = http://localhost:5000
+@apiVersion = 1.0
+
+###
+# Bu dosya REST Client extension ile kullanilmak uzere hazirlandi.
+# On kosullar:
+# 1. `docker compose up -d` ile PostgreSQL, RabbitMQ ve Ollama'yi kaldir.
+# 2. VS Code icinden `Debug SourceEx APIs` compound launch config'ini baslat.
+# 3. Sirayla request'leri calistir.
+###
+
+### Identity health check
+GET {{identityBaseUrl}}/health/live
+
+### Expense API health check
+GET {{expenseBaseUrl}}/health/live
+
+### Employee kullanicisi ile login ol ve token al
+# @name employeeLogin
+POST {{identityBaseUrl}}/api/v{{apiVersion}}/identity/auth/login
+Content-Type: application/json
+
+{
+  "userNameOrEmail": "employee-001",
+  "password": "Passw0rd!"
+}
+
+### Employee token ile identity serviste current user kontrol et
+GET {{identityBaseUrl}}/api/v{{apiVersion}}/identity/auth/me
+Authorization: Bearer {{employeeLogin.response.body.accessToken}}
+
+### Employee token ile expense API'de claim aktarimini kontrol et
+GET {{expenseBaseUrl}}/api/v{{apiVersion}}/auth/me
+Authorization: Bearer {{employeeLogin.response.body.accessToken}}
+
+### Employee olarak yeni expense olustur
+# @name createExpense
+POST {{expenseBaseUrl}}/api/v{{apiVersion}}/expenses
+Authorization: Bearer {{employeeLogin.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "amount": 1499.99,
+  "currency": "TRY",
+  "description": "Conference travel for security workshop"
+}
+
+### Olusan expense kaydini employee token ile goruntule
+GET {{expenseBaseUrl}}/api/v{{apiVersion}}/expenses/{{createExpense.response.body.expenseId}}
+Authorization: Bearer {{employeeLogin.response.body.accessToken}}
+
+### Manager kullanicisi ile login ol
+# @name managerLogin
+POST {{identityBaseUrl}}/api/v{{apiVersion}}/identity/auth/login
+Content-Type: application/json
+
+{
+  "userNameOrEmail": "manager-001",
+  "password": "Passw0rd!"
+}
+
+### Manager token ile expense approval akisini tetikle
+POST {{expenseBaseUrl}}/api/v{{apiVersion}}/expenses/{{createExpense.response.body.expenseId}}/approve
+Authorization: Bearer {{managerLogin.response.body.accessToken}}
+
+### Expense durumunu approval sonrasinda tekrar kontrol et
+GET {{expenseBaseUrl}}/api/v{{apiVersion}}/expenses/{{createExpense.response.body.expenseId}}
+Authorization: Bearer {{managerLogin.response.body.accessToken}}
+
+### Refresh token akisini test et
+# @name refreshManagerToken
+POST {{identityBaseUrl}}/api/v{{apiVersion}}/identity/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{managerLogin.response.body.refreshToken}}"
+}
+
+### Refresh sonrasinda manager profilini yeni access token ile tekrar cek
+GET {{identityBaseUrl}}/api/v{{apiVersion}}/identity/auth/me
+Authorization: Bearer {{refreshManagerToken.response.body.accessToken}}
