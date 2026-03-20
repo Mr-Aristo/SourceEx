@@ -31,13 +31,20 @@ public sealed class ExpenseCreatedIntegrationEventConsumer : IConsumer<ExpenseCr
                 assessment.RequiresManualReview,
                 assessment.ConfidenceScore,
                 assessment.Reasoning),
+            publishContext =>
+            {
+                publishContext.CorrelationId = context.CorrelationId ?? context.MessageId ?? context.Message.ExpenseId;
+                publishContext.ConversationId = context.ConversationId;
+            },
             context.CancellationToken);
 
         _logger.LogInformation(
-            "Policy worker assessed expense {ExpenseId}. RiskLevel: {RiskLevel}, RequiresManualReview: {RequiresManualReview}, ConfidenceScore: {ConfidenceScore}.",
+            "Policy worker assessed expense {ExpenseId}. RiskLevel: {RiskLevel}, RequiresManualReview: {RequiresManualReview}, ConfidenceScore: {ConfidenceScore}, MessageId: {MessageId}, CorrelationId: {CorrelationId}.",
             context.Message.ExpenseId,
             assessment.RiskLevel,
             assessment.RequiresManualReview,
-            assessment.ConfidenceScore);
+            assessment.ConfidenceScore,
+            context.MessageId,
+            context.CorrelationId);
     }
 }

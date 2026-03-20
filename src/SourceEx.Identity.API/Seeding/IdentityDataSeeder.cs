@@ -32,7 +32,7 @@ public sealed class IdentityDataSeeder
 
     public async Task SeedAsync()
     {
-        await _dbContext.Database.EnsureCreatedAsync();
+        await _dbContext.Database.MigrateAsync();
 
         await EnsureRolesAsync();
 
@@ -122,4 +122,3 @@ public sealed class IdentityDataSeeder
         await _dbContext.SaveChangesAsync();
     }
 }
-

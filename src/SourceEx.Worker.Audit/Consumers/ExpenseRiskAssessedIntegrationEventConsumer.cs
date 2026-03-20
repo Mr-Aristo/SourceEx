@@ -18,11 +18,13 @@ public sealed class ExpenseRiskAssessedIntegrationEventConsumer : IConsumer<Expe
     public Task Consume(ConsumeContext<ExpenseRiskAssessedIntegrationEvent> context)
     {
         _logger.LogInformation(
-            "Audit worker recorded risk assessment for expense {ExpenseId}. RiskLevel: {RiskLevel}, ManualReview: {RequiresManualReview}, ConfidenceScore: {ConfidenceScore}.",
+            "Audit worker recorded risk assessment for expense {ExpenseId}. RiskLevel: {RiskLevel}, ManualReview: {RequiresManualReview}, ConfidenceScore: {ConfidenceScore}, MessageId: {MessageId}, CorrelationId: {CorrelationId}.",
             context.Message.ExpenseId,
             context.Message.RiskLevel,
             context.Message.RequiresManualReview,
-            context.Message.ConfidenceScore);
+            context.Message.ConfidenceScore,
+            context.MessageId,
+            context.CorrelationId);
 
         return Task.CompletedTask;
     }

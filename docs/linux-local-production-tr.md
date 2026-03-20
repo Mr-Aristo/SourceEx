@@ -165,7 +165,7 @@ Bu yaklasim, local production simulasyonunu daha guvenli ve daha gercekci yapar.
 
 ### Logging
 
-Projede Serilog, Seq veya OpenTelemetry henuz yok. Bu nedenle su anki en dogal loglama yontemi:
+Projede Serilog, Seq veya OpenTelemetry henuz yok. Buna ragmen tamamen logsuz bir durumda da degilsin; API host'larinda correlation ID ve activity tracking temeli, worker/outbox tarafinda ise message/correlation kimlikli loglar var. Bu nedenle su anki en dogal loglama yontemi:
 
 - uygulama loglari `stdout/stderr`
 - systemd altinda `journalctl`
@@ -183,7 +183,9 @@ Local Linux VM'de production benzeri HTTPS denemek istersen:
 
 gibi araclar kullanabilirsin.
 
-Ama bu repo'da bir eksik var: [Program.cs](../src/SourceEx.API/Program.cs) ve [Program.cs](../src/SourceEx.Identity.API/Program.cs) icinde `UseHttpsRedirection()` var, fakat `UseForwardedHeaders()` yok. Bu, Nginx HTTPS terminate ederken scheme algisinda sorun cikarabilir. Bu nedenle ilk kurulumda once HTTP reverse proxy ile ilerlemek daha risksizdir.
+Bu repo artik forwarded headers temelini iceriyor: [Program.cs](../src/SourceEx.API/Program.cs) ve [Program.cs](../src/SourceEx.Identity.API/Program.cs) icinde `UseHttpsRedirection()` ile birlikte `UseForwardedHeaders()` de var. Bu, Nginx HTTPS terminate ederken scheme bilgisinin daha dogru tasinmasini saglar.
+
+Yine de bunu "tam production hardening" gibi okumamak gerekir. Ilk kurulumda HTTP reverse proxy ile baslamak daha risksiz olabilir; HTTPS'e gecerken trusted proxy/network ayarlarini da gozden gecirmek gerekir.
 
 ## 4. Projeyi publish etmeden once proje icinde kontrol etmem gereken dosya ve ayarlar neler?
 
@@ -237,11 +239,11 @@ Repo'da `launchSettings.json` yok. Bu production deployment acisindan problem de
 - startup sirasinda `IdentityDataSeeder` calisiyor
 - health endpoint'leri var
 
-Eksik olan nokta:
+Temel seviye proxy farkindaligi artik var:
 
-- her iki host'ta da `UseForwardedHeaders()` yok
+- her iki host'ta da `UseForwardedHeaders()` bulunuyor
 
-Bu, Nginx reverse proxy ile HTTPS terminate edilen senaryoda akilda tutulmalidir.
+Buna ragmen Nginx reverse proxy ile HTTPS terminate edilen senaryoda trusted proxy/network tanimlari ve gercek dagitim topolojisi ayrica dusunulmelidir.
 
 ### Kestrel ayarlari
 
@@ -474,7 +476,7 @@ Yani domain olmadan da production benzeri reverse proxy akisini test edebilirsin
 
 ### HTTPS kullanacaksan
 
-HTTPS tarafina gececeksen once `UseForwardedHeaders()` eksigini not et. Mevcut halde ilk guvenli adim HTTP reverse proxy ile baslamaktir. HTTPS'ye gecmeden once proxy header destegi eklemek daha dogrudur.
+HTTPS tarafina gececeksen forwarded headers temelinin zaten mevcut oldugunu bil. Bundan sonraki asil konu, deployment topolojine gore trusted proxy/network ayarlarini ve sertifika zincirini dogru tanimlamaktir.
 
 ## 9. Uygulamayi arka planda surekli calistirmak icin systemd servisi nasil yazilir?
 
@@ -683,7 +685,7 @@ veya
 
 ### Proxy headers
 
-Bu projede en onemli deployment eksiklerinden biri budur. `UseForwardedHeaders()` olmadigi icin ozellikle HTTPS ve gercek istemci IP'si gibi konularda dikkatli olman gerekir.
+Bu projede forwarded headers temeli artik mevcut. Bu iyi bir baslangic. Ancak ozellikle HTTPS ve gercek istemci IP'si gibi konularda `KnownProxies` / `KnownNetworks` benzeri sertlestirme adimlari yine de onemlidir.
 
 ## 11. Bu projeyi local production simulasyonunda calistirirken hangi problemlerle karsilasabilirim?
 
@@ -824,7 +826,7 @@ Bu repo'nun bugunku durumuna gore en mantikli deployment akisi su olur:
 dotnet build SourceEx.slnx
 ```
 
-Not: Bu repo'da EF migration dosyalari yok. Hem identity hem expense veritabani tarafinda ilk olusum `EnsureCreated` ile bootstrap ediliyor. Bu, local production simulasyonu icin kabul edilebilir; ama gercek production'a gecmeden once migration stratejisi eklenmelidir.
+Not: Bu repo'da artik initial EF migration dosyalari var. Hem identity hem expense veritabani tarafinda host'lar startup sirasinda `MigrateAsync()` ile bu migration'lari uygular. Bu, local production simulasyonu icin daha saglam bir temel sunar; ama gercek production'a gecmeden once rollout ve rollback disiplini yine de netlestirilmelidir.
 
 ### Adim 2: Tum host'lar icin publish al
 
@@ -970,8 +972,8 @@ Hayir. Local production simulasyonu icin iyi bir temel var ama gercek production
 Eksik veya gelistirilmeye acik alanlar:
 
 - `appsettings.Production.json` dosyalari yok
-- EF migration dosyalari yok
-- `UseForwardedHeaders()` yok
+- initial EF migration dosyalari var ama rollout disiplini halen basic seviyede
+- `UseForwardedHeaders()` temeli var ama proxy trust ayarlari daha da sertlestirilmeli
 - merkezi loglama yok
 - secrets yonetimi basit duzeyde
 - identity tarafi icin gelismis hesap guvenligi ozellikleri yok
@@ -991,8 +993,8 @@ Bu proje icin en mantikli ilk local production simulasyonu modeli su olsun:
 
 Bu modeli oturttuktan sonra ikinci asamada su iyilestirmelere gecebilirsin:
 
-- `UseForwardedHeaders()` eklemek
+- trusted proxy/network ayarlariyla forwarded headers davranisini sertlestirmek
 - HTTPS'i yerlestirmek
-- EF migration stratejisi getirmek
+- EF migration rollout ve release stratejisini olgunlastirmak
 - Serilog/Seq veya OpenTelemetry eklemek
 - CI/CD publish pipeline yazmak

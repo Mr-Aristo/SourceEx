@@ -67,10 +67,23 @@ public sealed class OutboxProcessor : BackgroundService
                 if (payload == null)
                     throw new InvalidOperationException($"Could not deserialize outbox message '{message.Id}'.");
 
-                await publishEndpoint.Publish(payload, messageType, cancellationToken);
+                await publishEndpoint.Publish(
+                    payload,
+                    messageType,
+                    publishContext =>
+                    {
+                        publishContext.MessageId = message.Id;
+                        publishContext.CorrelationId ??= message.Id;
+                    },
+                    cancellationToken);
 
                 message.ProcessedOnUtc = DateTime.UtcNow;
                 message.Error = null;
+
+                _logger.LogInformation(
+                    "Published outbox message {OutboxMessageId} as {OutboxMessageType}.",
+                    message.Id,
+                    message.Type);
             }
             catch (Exception exception)
             {

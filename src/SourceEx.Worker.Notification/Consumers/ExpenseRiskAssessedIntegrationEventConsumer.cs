@@ -21,10 +21,12 @@ public sealed class ExpenseRiskAssessedIntegrationEventConsumer : IConsumer<Expe
             return Task.CompletedTask;
 
         _logger.LogInformation(
-            "Notification worker flagged expense {ExpenseId} for manual review. RiskLevel: {RiskLevel}. Reason: {Reasoning}",
+            "Notification worker flagged expense {ExpenseId} for manual review. RiskLevel: {RiskLevel}. Reason: {Reasoning}. MessageId: {MessageId}, CorrelationId: {CorrelationId}.",
             context.Message.ExpenseId,
             context.Message.RiskLevel,
-            context.Message.Reasoning);
+            context.Message.Reasoning,
+            context.MessageId,
+            context.CorrelationId);
 
         return Task.CompletedTask;
     }

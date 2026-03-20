@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using SourceEx.API.Observability;
 using SourceEx.Application.Exceptions;
 using SourceEx.Domain.Exceptions;
 
@@ -66,6 +67,11 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         };
 
         problemDetails.Extensions["traceId"] = httpContext.TraceIdentifier;
+        if (httpContext.Items.TryGetValue(CorrelationIdConstants.ItemName, out var correlationId) &&
+            correlationId is string correlationIdValue)
+        {
+            problemDetails.Extensions["correlationId"] = correlationIdValue;
+        }
 
         return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {

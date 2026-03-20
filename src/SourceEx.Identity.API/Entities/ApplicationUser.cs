@@ -14,10 +14,11 @@ public sealed class ApplicationUser
     public string DepartmentId { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+    public int AccessFailedCount { get; set; }
+    public DateTime? LockoutEndUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAtUtc { get; set; }
 
     public ICollection<ApplicationUserRole> UserRoles { get; set; } = [];
     public ICollection<RefreshToken> RefreshTokens { get; set; } = [];
 }
-

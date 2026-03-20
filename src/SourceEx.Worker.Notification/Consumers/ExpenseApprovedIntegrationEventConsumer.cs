@@ -18,10 +18,12 @@ public sealed class ExpenseApprovedIntegrationEventConsumer : IConsumer<ExpenseA
     public Task Consume(ConsumeContext<ExpenseApprovedIntegrationEvent> context)
     {
         _logger.LogInformation(
-            "Notification worker processed approval for expense {ExpenseId} approved by {ApproverId} in department {DepartmentId}.",
+            "Notification worker processed approval for expense {ExpenseId} approved by {ApproverId} in department {DepartmentId}. MessageId: {MessageId}, CorrelationId: {CorrelationId}.",
             context.Message.ExpenseId,
             context.Message.ApproverId,
-            context.Message.ApproverDepartmentId);
+            context.Message.ApproverDepartmentId,
+            context.MessageId,
+            context.CorrelationId);
 
         return Task.CompletedTask;
     }

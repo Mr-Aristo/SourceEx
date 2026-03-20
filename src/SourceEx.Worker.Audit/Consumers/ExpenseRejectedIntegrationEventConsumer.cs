@@ -18,8 +18,10 @@ public sealed class ExpenseRejectedIntegrationEventConsumer : IConsumer<ExpenseR
     public Task Consume(ConsumeContext<ExpenseRejectedIntegrationEvent> context)
     {
         _logger.LogInformation(
-            "Audit worker recorded expense rejection. ExpenseId: {ExpenseId}.",
-            context.Message.ExpenseId);
+            "Audit worker recorded expense rejection. ExpenseId: {ExpenseId}, MessageId: {MessageId}, CorrelationId: {CorrelationId}.",
+            context.Message.ExpenseId,
+            context.MessageId,
+            context.CorrelationId);
 
         return Task.CompletedTask;
     }

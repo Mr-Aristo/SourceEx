@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SourceEx.Infrastructure.Data.Context;
+using Microsoft.EntityFrameworkCore;
 
 namespace SourceEx.Infrastructure.Bootstrap;
 
@@ -17,7 +18,7 @@ public static class InfrastructureBootstrapper
             .CreateLogger("InfrastructureBootstrapper");
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        logger.LogInformation("Ensuring the SourceEx application database schema exists.");
-        await dbContext.Database.EnsureCreatedAsync();
+        logger.LogInformation("Applying pending migrations for the SourceEx application database.");
+        await dbContext.Database.MigrateAsync();
     }
 }
