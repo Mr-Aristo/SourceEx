@@ -357,6 +357,8 @@ Local services:
 - PostgreSQL
 - RabbitMQ with management UI
 - Ollama
+- Prometheus
+- Grafana
 
 The PostgreSQL container now also initializes the dedicated `sourceex_identity` database for the identity module during first boot.
 
@@ -371,6 +373,7 @@ The most important configuration sections are:
 - `Jwt`
 - `IdentitySeed`
 - `Ollama`
+- `Serilog`
 
 These are defined in the host projects through `appsettings.json`.
 
@@ -387,7 +390,7 @@ The readiness endpoint currently checks database connectivity.
 
 ### Logging
 
-Workers and API currently rely on standard .NET logging.
+Workers and API now rely on structured Serilog JSON logging.
 
 Baseline observability that already exists:
 
@@ -395,12 +398,16 @@ Baseline observability that already exists:
 - correlation IDs added to `ProblemDetails`
 - activity tracking in host logging
 - worker and outbox logs include message/correlation identifiers
+- request logging in both API hosts
+- Prometheus metrics endpoints in both API hosts
+- Prometheus and Grafana local infrastructure with provisioned dashboard support
+- custom application metrics for outbox and identity authentication flows
 
-This is enough for local development, but the recommended next step is to add:
+What is still intentionally deferred:
 
-- structured logging
-- centralized log storage
+- centralized log storage/search
 - OpenTelemetry tracing and metrics
+- worker-hosted metrics endpoints
 
 ### Reverse Proxy Readiness
 
@@ -423,7 +430,7 @@ The current implementation is intentionally pragmatic and still has open areas f
 - no inbox/idempotency persistence yet
 - reverse proxy support is baseline-only, not fully hardened
 - identity hardening exists at a minimum viable level, but deeper protection is still missing
-- no structured observability stack yet
+- observability is still baseline-only; there is no distributed tracing or centralized log search yet
 - identity module does not yet mirror the same internal layering as the expense module
 - no distributed tracing yet
 - no dedicated read-model store yet
@@ -440,7 +447,7 @@ Recommended next improvements:
 - add Testcontainers-based infrastructure tests after the basic test baseline exists
 - add inbox/idempotency persistence
 - consider MassTransit transactional outbox integration after migrations and tests stabilize
-- add structured logging and OpenTelemetry
+- extend the observability baseline with tracing and centralized log/search capabilities
 - evaluate whether the identity module should evolve toward its own `Application / Infrastructure` split
 - introduce dedicated read models
 - evaluate Marten when event sourcing or advanced projections become necessary
@@ -449,5 +456,6 @@ Recommended next improvements:
 
 - [Architecture Guide (English)](architecture-en.md)
 - [Architecture Guide (Turkish)](architecture-tr.md)
+- [Observability Guide](OBSERVABILITY.md)
 - [Testing Guide](TESTING_GUIDE.md)
 - [Roadmap](ROADMAP.md)

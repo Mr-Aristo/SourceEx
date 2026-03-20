@@ -1,4 +1,5 @@
 using BuildingBlocks.Messaging;
+using BuildingBlocks.Observability;
 using SourceEx.Worker.Audit.Consumers;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -11,6 +12,7 @@ builder.Logging.Configure(options =>
         ActivityTrackingOptions.ParentId;
 });
 
+builder.AddSourceExStructuredLogging("sourceex-worker-audit");
 builder.Services.AddMessageBroker(
     builder.Configuration,
     typeof(ExpenseCreatedIntegrationEventConsumer).Assembly);

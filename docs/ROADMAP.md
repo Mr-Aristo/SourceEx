@@ -39,7 +39,8 @@ Bu roadmap, mevcut Clean Architecture iskeletini bozmeden projeyi uretime daha y
 - [x] docker compose ile PostgreSQL, RabbitMQ ve Ollama altyapisini ekle
 - [x] README'yi calistirma senaryolariyla doldur
 - [x] Baseline observability ekle: correlation, trace/message kimlikleri ve background processing gorunurlugu
-- [ ] Structured logging, merkezi loglama ve distributed tracing katmanini ekle
+- [x] Structured logging, request logging, metrics endpoint ve Prometheus/Grafana baseline'ini ekle
+- [ ] Merkezi loglama/search ve distributed tracing katmanini ekle
 - [ ] Testcontainers tabanli integration test projesi ekle
 
 ## Faz 6: Ileri Seviye Veri Mimarisi

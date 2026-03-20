@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SourceEx.Infrastructure.Data.Context;
+using SourceEx.Infrastructure.Observability;
 
 namespace SourceEx.Infrastructure.Outbox;
 
@@ -42,6 +43,8 @@ public sealed class OutboxProcessor : BackgroundService
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var publishEndpoint = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+        var pendingCount = await dbContext.OutboxMessages.CountAsync(message => message.ProcessedOnUtc == null, cancellationToken);
+        OutboxMetrics.PendingMessages.Set(pendingCount);
 
         var messages = await dbContext.OutboxMessages
             .Where(message => message.ProcessedOnUtc == null)
@@ -79,6 +82,7 @@ public sealed class OutboxProcessor : BackgroundService
 
                 message.ProcessedOnUtc = DateTime.UtcNow;
                 message.Error = null;
+                OutboxMetrics.PublishedMessages.WithLabels(GetMetricMessageType(message.Type)).Inc();
 
                 _logger.LogInformation(
                     "Published outbox message {OutboxMessageId} as {OutboxMessageType}.",
@@ -89,6 +93,7 @@ public sealed class OutboxProcessor : BackgroundService
             {
                 message.RetryCount++;
                 message.Error = exception.Message;
+                OutboxMetrics.FailedMessages.WithLabels(GetMetricMessageType(message.Type)).Inc();
 
                 _logger.LogError(
                     exception,
@@ -99,5 +104,14 @@ public sealed class OutboxProcessor : BackgroundService
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        OutboxMetrics.PendingMessages.Set(await dbContext.OutboxMessages.CountAsync(message => message.ProcessedOnUtc == null, cancellationToken));
+    }
+
+    private static string GetMetricMessageType(string typeName)
+    {
+        var assemblySplit = typeName.Split(',', 2, StringSplitOptions.TrimEntries);
+        var qualifiedTypeName = assemblySplit[0];
+        var typeSegments = qualifiedTypeName.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return typeSegments.Length == 0 ? qualifiedTypeName : typeSegments[^1];
     }
 }

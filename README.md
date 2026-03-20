@@ -18,6 +18,8 @@ The repository includes a root-level [docker-compose.yml](docker-compose.yml) fo
 - PostgreSQL
 - RabbitMQ Management
 - Ollama
+- Prometheus
+- Grafana
 
 ## Quick Start
 
@@ -33,11 +35,16 @@ docker compose up -d
 docker exec -it sourceex-ollama ollama pull gemma3
 ```
 
-3. Run the identity service, expense API, and worker projects in separate terminals:
+3. Run the identity service and expense API on fixed HTTP ports so Prometheus can scrape them:
 
 ```bash
-dotnet run --project src/SourceEx.Identity.API
-dotnet run --project src/SourceEx.API
+ASPNETCORE_URLS=http://localhost:5001 dotnet run --project src/SourceEx.Identity.API
+ASPNETCORE_URLS=http://localhost:5000 dotnet run --project src/SourceEx.API
+```
+
+4. Run the worker projects in separate terminals:
+
+```bash
 dotnet run --project src/SourceEx.Worker.Notification
 dotnet run --project src/SourceEx.Worker.Audit
 dotnet run --project src/SourceEx.Worker.Policy
@@ -48,7 +55,15 @@ Note: use the actual HTTP/HTTPS addresses printed by ASP.NET Core when the servi
 - identity service: `http://localhost:5001`
 - expense API: `http://localhost:5000`
 
-4. Log in through the identity service:
+Local observability endpoints:
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` with `admin / sourceex`
+- expense API metrics: `http://localhost:5000/metrics`
+- identity API metrics: `http://localhost:5001/metrics`
+- Grafana auto-loads the provisioned `SourceEx Overview` dashboard
+
+5. Log in through the identity service:
 
 ```bash
 curl -X POST http://localhost:5001/api/v1.0/identity/auth/login \
@@ -68,7 +83,7 @@ Seeded local accounts:
 
 Use `manager-001`, `finance-001`, or `admin-001` when you need an approver token.
 
-5. Create an expense with the returned `accessToken`:
+6. Create an expense with the returned `accessToken`:
 
 ```bash
 curl -X POST http://localhost:5000/api/v1.0/expenses \
@@ -99,6 +114,18 @@ The approve endpoint additionally requires one of these roles:
 
 `SourceEx.Worker.Policy` consumes `ExpenseCreatedIntegrationEvent` messages and uses Ollama's `/api/chat` endpoint to evaluate expense risk. If Ollama is unavailable, the worker continues the flow using deterministic fallback rules.
 
+## Observability
+
+The minimum viable observability baseline now includes:
+
+- structured JSON logging through Serilog
+- request logging for both API hosts
+- existing `/health/live` and `/health/ready` endpoints
+- Prometheus metrics endpoints on the two API hosts
+- Prometheus + Grafana containers with provisioned datasource and starter dashboard
+
+This baseline does not yet include distributed tracing, Elasticsearch/Kibana, or centralized log search. Those remain future-phase concerns.
+
 ## Roadmap
 
 Implemented and planned work is tracked in [ROADMAP.md](docs/ROADMAP.md).
@@ -117,6 +144,7 @@ Project documentation is available in:
 
 - [Architecture Guide (English)](docs/architecture-en.md)
 - [Architecture Guide (Turkish)](docs/architecture-tr.md)
+- [Observability Guide](docs/OBSERVABILITY.md)
 - [Project Documentation](docs/PROJECT_DOCUMENTATION.md)
 - [Testing Guide](docs/TESTING_GUIDE.md)
 - [Linux Local Production Guide](docs/linux-local-production-tr.md)

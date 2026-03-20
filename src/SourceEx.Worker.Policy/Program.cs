@@ -1,4 +1,5 @@
 using BuildingBlocks.Messaging;
+using BuildingBlocks.Observability;
 using SourceEx.Integrations.Ollama;
 using SourceEx.Worker.Policy.Consumers;
 
@@ -12,6 +13,7 @@ builder.Logging.Configure(options =>
         ActivityTrackingOptions.ParentId;
 });
 
+builder.AddSourceExStructuredLogging("sourceex-worker-policy");
 builder.Services.AddMessageBroker(builder.Configuration, typeof(ExpenseCreatedIntegrationEventConsumer).Assembly);
 builder.Services.AddOllamaIntegration(builder.Configuration);
 
