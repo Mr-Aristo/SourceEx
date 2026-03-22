@@ -34,7 +34,7 @@ public static class ServiceCollectionExtensions
                 var username = configuration["MessageBroker:Username"] ?? "guest";
                 var password = configuration["MessageBroker:Password"] ?? "guest";
 
-                if (int.TryParse(configuration["MessageBroker:Port"], out var port) && port > 0)
+                if (ushort.TryParse(configuration["MessageBroker:Port"], out var port) && port > 0)
                 {
                     busConfigurator.Host(host, port, virtualHost, hostConfigurator =>
                     {

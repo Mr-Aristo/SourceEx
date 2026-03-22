@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="deploy/postgres/init/01-create-sourceex-identity-db.sh" />
+    <File Path="docker-compose.yml" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/BuildingBlocks/BuildingBlocks.csproj" />
     <Project Path="src/SourceEx.API/SourceEx.API.csproj" />
@@ -6,8 +10,8 @@
     <Project Path="src/SourceEx.Contracts/SourceEx.Contracts.csproj" />
     <Project Path="src/SourceEx.Domain/SourceEx.Domain.csproj" Id="10c91d73-05aa-4468-b3c1-e370a12834f9" />
     <Project Path="src/SourceEx.Identity.API/SourceEx.Identity.API.csproj" />
-    <Project Path="src/SourceEx.Integrations.Ollama/SourceEx.Integrations.Ollama.csproj" />
     <Project Path="src/SourceEx.Infrastructure/SourceEx.Infrastructure.csproj" Id="3fe30a76-5221-4d3f-a6f8-d7e78ac765bb" />
+    <Project Path="src/SourceEx.Integrations.Ollama/SourceEx.Integrations.Ollama.csproj" />
     <Project Path="src/SourceEx.Worker.Audit/SourceEx.Worker.Audit.csproj" />
     <Project Path="src/SourceEx.Worker.Notification/SourceEx.Worker.Notification.csproj" />
     <Project Path="src/SourceEx.Worker.Policy/SourceEx.Worker.Policy.csproj" />

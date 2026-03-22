@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Refit;
@@ -14,7 +15,12 @@ public static class DependencyInjection
     {
         services.AddOptions<OllamaOptions>()
             .Bind(configuration.GetSection(OllamaOptions.SectionName))
-            .ValidateDataAnnotations()
+            .Validate(options =>
+            {
+                var validationContext = new ValidationContext(options);
+                var validationResults = new List<ValidationResult>();
+                return Validator.TryValidateObject(options, validationContext, validationResults, validateAllProperties: true);
+            }, $"Configuration section '{OllamaOptions.SectionName}' is invalid.")
             .ValidateOnStart();
 
         services.AddRefitClient<IOllamaApi>()
