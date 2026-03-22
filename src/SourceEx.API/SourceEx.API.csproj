@@ -27,4 +27,10 @@
     <ProjectReference Include="..\SourceEx.Infrastructure\SourceEx.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Dockerfile">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

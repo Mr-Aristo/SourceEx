@@ -20,4 +20,7 @@
     <Project Path="tests/SourceEx.Application.Tests/SourceEx.Application.Tests.csproj" />
     <Project Path="tests/SourceEx.Domain.Tests/SourceEx.Domain.Tests.csproj" />
   </Folder>
+  <Project Path="docker-compose.dcproj">
+    <Build />
+  </Project>
 </Solution>
