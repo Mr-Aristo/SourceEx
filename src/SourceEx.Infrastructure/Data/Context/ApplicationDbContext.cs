@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SourceEx.Application.Data;
+using BuildingBlocks.Messaging;
 using SourceEx.Contracts.Expenses;
 using SourceEx.Domain.Abstractions;
 using SourceEx.Domain.Events;
@@ -66,7 +67,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     private static OutboxMessage CreateOutboxMessage(IDomainEvent domainEvent)
     {
-        var integrationEvent = domainEvent switch
+        IntegrationEvent integrationEvent = domainEvent switch
         {
             ExpenseCreatedDomainEvent createdEvent => new ExpenseCreatedIntegrationEvent(
                 createdEvent.ExpenseId,
