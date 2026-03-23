@@ -1,9 +1,3 @@
-using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
-using SourceEx.API.Observability;
-using SourceEx.Application.Exceptions;
-using SourceEx.Domain.Exceptions;
 
 namespace SourceEx.API.ExceptionHandling;
 

@@ -1,20 +1,3 @@
-using Asp.Versioning;
-using BuildingBlocks.Messaging;
-using BuildingBlocks.Observability;
-using BuildingBlocks.Security;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpOverrides;
-using Prometheus;
-using SourceEx.API.Endpoints;
-using SourceEx.API.ExceptionHandling;
-using SourceEx.API.Observability;
-using SourceEx.API.RateLimiting;
-using SourceEx.API.Security;
-using SourceEx.Application;
-using SourceEx.Infrastructure.Bootstrap;
-using SourceEx.Infrastructure;
-using Serilog;
-using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
