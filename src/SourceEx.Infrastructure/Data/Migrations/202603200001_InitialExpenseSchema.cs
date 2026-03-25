@@ -1,7 +1,11 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using SourceEx.Infrastructure.Data.Context;
 
 namespace SourceEx.Infrastructure.Data.Migrations;
 
+[DbContext(typeof(ApplicationDbContext))]
+[Migration("202603200001_InitialExpenseSchema")]
 /// <inheritdoc />
 public partial class InitialExpenseSchema : Migration
 {
