@@ -1,7 +1,11 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using SourceEx.Identity.API.Data.Context;
 
 namespace SourceEx.Identity.API.Data.Migrations;
 
+[DbContext(typeof(IdentityDbContext))]
+[Migration("202603200001_InitialIdentitySchema")]
 /// <inheritdoc />
 public partial class InitialIdentitySchema : Migration
 {
